@@ -1,0 +1,1 @@
+# Extract structured fields from documents using Groq vision or text LLM

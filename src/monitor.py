@@ -1,0 +1,1 @@
+# SQLite logging for QA interactions and recent query history

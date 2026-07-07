@@ -1,0 +1,1 @@
+# Configuration constants for paths, models, and settings
