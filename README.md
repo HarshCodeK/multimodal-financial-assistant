@@ -1,5 +1,7 @@
 # Multimodal Financial Assistant
 
+![Project Screenshot](../image.png)
+
 ## What this does
 
 Upload a screenshot or PDF of a credit card statement, receipt, or invoice and ask "Why was this charge deducted?" The system reads the document, extracts the key fields (vendor, line items, totals, date), finds relevant policies from a local knowledge base, and generates a grounded answer explaining the charge.
