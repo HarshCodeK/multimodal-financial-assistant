@@ -1,12 +1,14 @@
 # Multimodal Financial Assistant
 
-## What this does
+A production-style RAG + vision pipeline that reads financial documents (PDF or image) and answers charge-dispute questions grounded in actual policy text — no hallucinated answers.
 
-Upload a screenshot or PDF of a credit card statement, receipt, or invoice and ask "Why was this charge deducted?" The system reads the document, extracts the key fields (vendor, line items, totals, date), finds relevant policies from a local knowledge base, and generates a grounded answer explaining the charge.
+## What it does
 
-## Why RAG + vision extraction together
-
-Vision reads the document so you don't have to type anything in. RAG grounds the explanation in real policy text (refund rules, subscription billing terms, late fee policies) so the LLM doesn't just make up a reason — it cites actual rules from the knowledge base.
+- **Vision + text extraction** — Groq's `meta-llama/llama-4-scout-17b-16e-instruct` vision model extracts structured fields (vendor, line items, totals, date, flagged charge) from uploaded screenshots or PDFs
+- **RAG policy grounding** — ChromaDB + `sentence-transformers` (`all-MiniLM-L6-v2`) retrieves relevant refund, subscription, and late-fee policy chunks so answers cite real rules
+- **JSON-repair retry loop** — `vision_extractor.py` retries with a stricter prompt if the first extraction fails JSON parsing
+- **Query logging** — every interaction (filename, question, answer, extracted fields, latency) persisted to SQLite via `monitor.py`
+- **Streamlit UI** — upload, extract, ask, and inspect recent logs in one interface
 
 ## Architecture
 
@@ -14,77 +16,74 @@ Vision reads the document so you don't have to type anything in. RAG grounds the
 Upload (PDF/Image)
       |
       v
-Parse (PyMuPDF for PDF, path for image)
+document_parser.py — PyMuPDF for PDF, PIL path for image
       |
       v
-Vision/Text Extract (Groq LLM — vision model for images, text model for PDFs)
+vision_extractor.py — Groq vision LLM => structured JSON fields
       |
       v
-Structured fields (vendor, items, totals, flagged_charge)
+qa_engine.py — retrieve_policy_context() via ChromaDB
       |
       v
-Retrieve Policy Context (SentenceTransformer embeddings + ChromaDB)
+Groq llama-3.3-70b-versatile — synthesize grounded answer
       |
       v
-LLM (Groq llama-3.3-70b) combines fields + policy + question
-      |
-      v
-Grounded Answer
+Streamlit UI + SQLite log
 ```
 
-## How to run
+## Stack
 
-1. Clone the repo and install dependencies:
-   ```
-   pip install -r requirements.txt
-   ```
-2. Copy `.env.example` to `.env` and add your Groq API key:
-   ```
-   GROQ_API_KEY=your_key_here
-   ```
-3. Build the policy knowledge base (run once):
-   ```
-   python -c "from src.knowledge_base import build_knowledge_base; build_knowledge_base()"
-   ```
-4. Launch the UI:
-   ```
-   streamlit run app.py
-   ```
-5. Upload a financial document and ask a question.
+![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
+![Groq](https://img.shields.io/badge/LLM-Groq-orange)
+![ChromaDB](https://img.shields.io/badge/Vector%20DB-ChromaDB-green)
+![Streamlit](https://img.shields.io/badge/UI-Streamlit-red)
 
-## Worked example
+`groq` · `pymupdf` · `pillow` · `chromadb` · `sentence-transformers` · `streamlit` · `python-dotenv`
 
-**Upload:** `sample (1).jpg` — a credit card statement screenshot.
+## Quickstart
 
-**Extracted fields:**
+```bash
+git clone https://github.com/HarshCodeK/multimodal-financial-assistant.git
+cd multimodal-financial-assistant
+python -m venv .venv && .venv\Scripts\activate   # or source .venv/bin/activate
+pip install -r requirements.txt
+
+cp .env.example .env
+# edit .env:
+# GROQ_API_KEY=your-key-here
+
+# one-time setup
+python -c "from src.knowledge_base import build_knowledge_base; build_knowledge_base()"
+
+streamlit run app.py
+```
+
+## Example
+
+**Upload:** credit card statement screenshot
+
+**Extracted (from `vision_extractor.py`):**
 ```json
 {
   "vendor": "Unknown",
   "line_items": [
     {"description": "Spotify Subscription", "amount": 11.99},
     {"description": "Progressive Insurance", "amount": 145.50},
-    {"description": "Target Purchase", "amount": 88.20},
-    {"description": "Grand Hotel (2 nights)", "amount": 340.00},
-    {"description": "Amazon.com Purchase", "amount": 55.00}
+    {"description": "Grand Hotel (2 nights)", "amount": 340.00}
   ],
-  "subtotal": 947.68,
-  "tax": 24.50,
   "total": 4512.78,
-  "date": "12/05/2026",
   "flagged_charge": {"description": "Progressive Insurance", "amount": 145.50}
 }
 ```
 
 **Question:** "Why was this charge deducted?"
 
-**Answer:** The Progressive Insurance charge of $145.50 was deducted as part of a recurring subscription billing cycle. Per policy, charges are processed on the same calendar day each month as the original sign-up date. Users receive an email notification 48 hours before each recurring charge.
+**Answer (grounded in `data/policy_docs/subscription_billing.txt`):** "The Progressive Insurance charge of $145.50 was deducted as part of a recurring subscription billing cycle. Per policy, charges are processed on the same calendar day each month..."
 
-**Policy sources used:** Subscription billing policy (recurring charges, billing cycle), refund policy (timeframes), late fee policy (when fees apply).
+## Status / Roadmap
 
-## What I'd add next
+Working prototype. Next steps:
 
-- **Docling** for better table extraction from complex PDF layouts
-- **Multi-statement comparison** to detect duplicate charges or billing changes over time
-- **Confidence scoring** on extracted fields so the user knows which fields the model is unsure about
-- **Streaming responses** for faster UX feedback
-- **Support for handwritten receipts** with higher-resolution vision models
+- Better table extraction for complex PDF layouts
+- Confidence scoring on extracted fields
+- Streaming LLM responses in the UI
