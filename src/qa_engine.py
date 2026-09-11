@@ -1,12 +1,19 @@
 import json
 import time
-from groq import Groq
-from dotenv import load_dotenv
 from src.vision_extractor import extract_fields
 from src.knowledge_base import retrieve_policy_context
 from src.monitor import log_interaction
 
-load_dotenv()
+
+def _groq_client():
+    from groq import Groq  # lazy import
+
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except ImportError:
+        pass
+    return Groq()
 
 def answer_question(document: dict, question: str) -> dict:
     start = time.time()
@@ -39,7 +46,7 @@ USER QUESTION: {question}
 
 Provide a clear, grounded answer referencing specific policy details where relevant."""
 
-    client = Groq()
+    client = _groq_client()
     completion = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[{"role": "user", "content": prompt}],

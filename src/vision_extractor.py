@@ -1,10 +1,14 @@
 import os
 import json
 import base64
-from groq import Groq
-from dotenv import load_dotenv
 
-load_dotenv()
+
+def _load_env():
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except ImportError:
+        pass
 
 VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
 TEXT_MODEL = "llama-3.3-70b-versatile"
@@ -27,6 +31,9 @@ def _encode_image(image_path: str) -> str:
         return base64.b64encode(f.read()).decode("utf-8")
 
 def _call_llm(messages: list, model: str) -> str:
+    from groq import Groq  # lazy import
+
+    _load_env()
     client = Groq(api_key=os.getenv("GROQ_API_KEY"))
     completion = client.chat.completions.create(
         model=model,

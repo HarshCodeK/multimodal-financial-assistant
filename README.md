@@ -58,6 +58,15 @@ python -c "from src.knowledge_base import build_knowledge_base; build_knowledge_
 streamlit run app.py
 ```
 
+### Offline test suite
+
+```bash
+python -m pytest tests/ -q
+```
+
+No API key or network needed — document parsing, JSON-fence repair, and
+SQLite logging are covered with the LLM layers stubbed.
+
 ## Example
 
 **Upload:** credit card statement screenshot

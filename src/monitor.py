@@ -1,7 +1,8 @@
 import sqlite3
 import json
+import os
 
-DB_PATH = "logs.db"
+DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "logs.db")
 
 def _get_conn():
     return sqlite3.connect(DB_PATH)
