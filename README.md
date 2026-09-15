@@ -1,3 +1,5 @@
+> **Archived 2026-09.** A learning slice: practice in vision LLM plus RAG over financial documents, built in a single session. Superseded by [regent](https://github.com/HarshCodeK/regent) - the AI control plane, where the same pipeline idea now has tests, CI, an append-only ledger and measured numbers. Kept for history, not presented as portfolio work.
+
 # Multimodal Financial Assistant
 
 A production-style RAG + vision pipeline that reads financial documents (PDF or image) and answers charge-dispute questions grounded in actual policy text — no hallucinated answers.
