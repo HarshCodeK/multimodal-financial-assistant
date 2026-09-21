@@ -1,10 +1,10 @@
 import os
-import fitz
 
 def load_document(file_path: str) -> dict:
     lower = file_path.lower()
     fname = os.path.basename(file_path)
     if lower.endswith(".pdf"):
+        import fitz  # lazy: PyMuPDF is heavy (~50MB), only load for PDFs
         doc = fitz.open(file_path)
         text = ""
         for page in doc:

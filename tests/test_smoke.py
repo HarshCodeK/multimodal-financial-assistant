@@ -4,6 +4,7 @@ Run from repo root:  python -m pytest tests/ -q
 """
 import os
 import sys
+import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -32,7 +33,10 @@ def test_parser_handles_image_path(tmp_path):
 
 
 def test_parser_extracts_pdf_text(tmp_path):
-    fitz = __import__("fitz")  # pymupdf
+    try:
+        fitz = __import__("fitz")  # pymupdf
+    except ImportError:
+        pytest.skip("pymupdf (fitz) not installed — PDF parsing test skipped")
     doc = fitz.open()
     page = doc.new_page()
     page.insert_text((50, 72), "TOTAL AMOUNT DUE: $4512.78")
