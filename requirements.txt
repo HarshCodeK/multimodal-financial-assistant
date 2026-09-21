@@ -1,8 +1,6 @@
 groq
 pymupdf
-pillow
-chromadb
-sentence-transformers
+scikit-learn
 streamlit
 python-dotenv
 pytest
