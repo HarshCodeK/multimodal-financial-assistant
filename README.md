@@ -1,8 +1,6 @@
 # Multimodal Financial Assistant
 
-Reads a receipt or invoice, extracts structured fields with a vision model,
-retrieves the governing policy from a ChromaDB vector store, and answers only
-from what it retrieved.
+Reads a receipt or invoice, extracts structured fields, retrieves the governing policy from a ChromaDB vector store, and answers only from what it retrieved. Images use the vision model; text-based PDFs are parsed with PyMuPDF.
 
 ```
 PDF or image
@@ -77,7 +75,7 @@ require a network round-trip for something deterministic.
 |---|---|
 | Vision extraction | 1355 ms, all fields correct |
 | ChromaDB ingest | 6 chunks from 3 policy documents |
-| Retrieval | top-3 with filenames attached |
+| Retrieval | top-3 with filenames attached and the user question included in the retrieval query |
 | Grounded answer | cites sources, admits gaps |
 
 ---
