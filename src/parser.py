@@ -15,7 +15,13 @@ def load(file_path: str) -> dict:
         doc = fitz.open(file_path)
         text = "".join(page.get_text() for page in doc)
         doc.close()
-        return {"type": "pdf", "text": text.strip(), "filename": name}
+        text = text.strip()
+        if not text:
+            raise ValueError(
+                f"PDF {name!r} has no extractable text. Scanned/image-only PDFs "
+                "are not supported by the current parser."
+            )
+        return {"type": "pdf", "text": text, "filename": name}
 
     if lower.endswith((".jpg", ".jpeg", ".png")):
         return {"type": "image", "path": file_path, "filename": name}
