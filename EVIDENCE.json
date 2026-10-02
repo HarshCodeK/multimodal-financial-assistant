@@ -1,0 +1,51 @@
+{
+  "repo": "multimodal-financial-assistant",
+  "tier": "A",
+  "domain": "multimodal extraction / grounded RAG",
+  "gate": {
+    "tests_passed": 14,
+    "tests_failed": 0,
+    "pytest_exit": 0,
+    "ci": "green",
+    "docker": "built and health-checked in CI",
+    "note": "Pipeline verified live against Groq with qwen/qwen3.8-27b (2026-10-03): extraction, ChromaDB retrieval, grounded answer with source citation."
+  },
+  "headline": [
+    {
+      "label": "tests passing",
+      "value": "14",
+      "command": "python -m pytest tests/ -q",
+      "tone": "accent"
+    },
+    {
+      "label": "vision extraction",
+      "value": "1355 ms",
+      "command": "measured live",
+      "tone": "info"
+    },
+    {
+      "label": "vector store",
+      "value": "ChromaDB",
+      "command": "grep chromadb requirements.txt",
+      "tone": ""
+    }
+  ],
+  "rows": [
+    {
+      "metric": "tests passing",
+      "value": 14,
+      "command": "python -m pytest tests/ -q"
+    },
+    {
+      "metric": "policy chunks embedded",
+      "value": 6,
+      "command": "kb.ingest()"
+    },
+    {
+      "metric": "vision extraction latency",
+      "value": "1355 ms",
+      "command": "measured live"
+    }
+  ],
+  "source": "measured 2026-10-03"
+}
