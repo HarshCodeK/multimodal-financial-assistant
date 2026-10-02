@@ -1,0 +1,7 @@
+groq>=0.9
+pymupdf>=1.24
+chromadb>=1.5
+sentence-transformers>=5.0
+streamlit>=1.38
+python-dotenv>=1.0
+pytest>=8.0
