@@ -6,7 +6,11 @@ Reads a receipt or invoice, extracts structured fields, retrieves the governing 
 PDF or image
    |
    v
-extract.py    vision model -> {vendor, line_items, subtotal, tax, total, date}
+parser.py / extract.py
+   | image -> vision model
+   | PDF   -> PyMuPDF text layer -> model
+   v
+structured fields -> {vendor, line_items, subtotal, tax, total, date}
    |
    v
 knowledge_base.py   ChromaDB top-3 policy chunks, with source filenames
@@ -34,9 +38,7 @@ system answered:
 > after the included allowance is exhausted, but it does not provide the
 > specific allowance limits or unit rates..."
 
-That refusal *is* the RAG working. A model handed three irrelevant chunks will
-happily invent a plausible reason if allowed to, and an invented reason about
-money is worse than no answer.
+The refusal is a prompt-level grounding rule: the model is instructed to answer only from retrieved policy context. That is useful behavior, not a hard security boundary; a malicious document can still create a prompt-injection risk, which is listed under the limitations.
 
 ---
 
@@ -48,8 +50,7 @@ cp .env.example .env          # add GROQ_API_KEY
 streamlit run app.py
 ```
 
-First question builds the vector index (~7s: model load plus embedding 6 chunks).
-After that it is instant.
+On the included sample corpus, the first question builds the persistent vector index; later questions reuse it.
 
 ---
 
@@ -73,7 +74,7 @@ require a network round-trip for something deterministic.
 
 | Step | Result |
 |---|---|
-| Vision extraction | 1355 ms, all fields correct |
+| Included image extraction sample | 1355 ms; sample fields matched the expected values |
 | ChromaDB ingest | 6 chunks from 3 policy documents |
 | Retrieval | top-3 with filenames attached and the user question included in the retrieval query |
 | Grounded answer | cites sources, admits gaps |
@@ -106,8 +107,7 @@ guarantee the shape. One retry remains as a backstop.
 and returns source metadata with each hit — which is what lets an answer cite
 where it came from. FAISS is faster and would leave the persistence layer to me.
 
-**One model.** `qwen/qwen3.8-27b` is currently the only model on the account
-that accepts images, so vision and text go to the same one.
+**Vision-capable model required for images.** `src/models.py` marks which configured model entries can accept images; text-based PDFs use the same configured model after PyMuPDF extraction.
 
 ---
 
@@ -123,8 +123,5 @@ interviewer will actually ask, with answers grounded in this code.
   the main gap.
 - **The corpus is three short documents.** Retrieval quality on a real policy set
   would need measuring.
-- **Document text goes into the prompt unescaped**, so a document containing
-  instructions is a prompt-injection vector. A production version would treat
-  document content as data, never as instructions.
-- **100-word chunks can split a sentence.** Sentence-aware splitting would be
-  better; at six chunks the measured retrieval is identical.
+- **Document text is untrusted prompt data.** A malicious document can attempt prompt injection; a production version should isolate document content from system instructions.
+- **100-word chunks can split a sentence.** Sentence-aware splitting would be better; the current sample corpus is too small to establish retrieval quality at scale.
