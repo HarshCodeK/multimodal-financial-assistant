@@ -11,6 +11,7 @@ model can still return prose inside a valid-looking envelope.
 """
 import base64
 import json
+import mimetypes
 import os
 
 from . import models
@@ -31,9 +32,12 @@ class ExtractionError(RuntimeError):
     """Extraction failed, and we know why."""
 
 
-def _encode_image(path: str) -> str:
+def _encode_image(path: str) -> tuple[str, str]:
+    mime, _ = mimetypes.guess_type(path)
+    if mime not in {"image/jpeg", "image/png"}:
+        raise ExtractionError("unsupported image type; use JPEG or PNG")
     with open(path, "rb") as f:
-        return base64.b64encode(f.read()).decode()
+        return base64.b64encode(f.read()).decode(), mime
 
 
 def _call(messages, model_id):
@@ -61,12 +65,13 @@ def extract(document: dict, model_id: str = None) -> dict:
                 f"{model_id} cannot read images. Use one of: "
                 f"{', '.join(models.VISION_MODELS)}"
             )
+        encoded, mime = _encode_image(document["path"])
         messages = [{
             "role": "user",
             "content": [
                 {"type": "text", "text": EXTRACT_PROMPT},
                 {"type": "image_url", "image_url": {
-                    "url": f"data:image/jpeg;base64,{_encode_image(document['path'])}",
+                    "url": f"data:{mime};base64,{encoded}",
                     "detail": "high"}},
             ],
         }]
