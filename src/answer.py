@@ -29,11 +29,15 @@ def answer(document: dict, question: str, model_id: str = None) -> dict:
 
     fields = extract(document, model_id)
 
-    # Search on what a human would question: the vendor and the odd charge.
+    # Retrieval must be conditioned on the actual user question.
+    # Document fields provide useful context, but must not replace the question
+    # or the system can retrieve a policy about the charge while ignoring what
+    # the user actually asked.
     flagged = fields.get("flagged_charge") or {}
     if isinstance(flagged, dict):
         flagged = flagged.get("description", "")
-    query = f"{fields.get('vendor','')} {flagged}".strip()
+    query_parts = [question, str(fields.get("vendor", "")), str(flagged)]
+    query = " ".join(p.strip() for p in query_parts if p and p.strip())
     hits = search(query)
 
     context = "\n\n".join(f"[{h['source']}]\n{h['text']}" for h in hits) or "(none retrieved)"
