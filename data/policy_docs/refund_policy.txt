@@ -1,0 +1,16 @@
+REFUND POLICY
+
+Refunds are issued within 30 days of the original purchase date. To be eligible
+for a refund, the customer must not have used the service beyond a single test
+call during the trial period. Requests made after the 30 day window are not
+eligible for a monetary refund, but may be converted into service credit at the
+discretion of the support team.
+
+Partial refunds are granted when only some line items are disputed. The refund
+amount is the sum of the disputed items only; taxes are refunded in proportion
+to the refunded items. Refunds are issued to the original payment method, and
+may take a further 5 to 10 business days to appear on a statement.
+
+Subscription renewals are refundable pro rata when a cancellation is requested
+before the next billing date. Usage charges incurred during the current period
+are not refundable, because the capacity has already been consumed.

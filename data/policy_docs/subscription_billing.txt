@@ -1,0 +1,13 @@
+SUBSCRIPTION BILLING
+
+All subscriptions are billed on a recurring monthly or annual basis. An annual
+plan is invoiced once per year at the committed rate. Changing plan mid-cycle
+takes effect at the next renewal, and the difference is not prorated.
+
+Overage charges are assessed after the included allowance is exhausted, at the
+per-unit rate published on the pricing page. Overage is billed in arrears with
+the following month's invoice rather than immediately.
+
+Cancellation takes effect at the end of the current billing period. Any request
+received during a billing cycle does not receive a refund for the unused
+remainder of that cycle; it simply stops further charges.

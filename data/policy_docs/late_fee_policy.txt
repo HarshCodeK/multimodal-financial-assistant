@@ -1,0 +1,15 @@
+LATE FEE POLICY
+
+A late fee of 1.5 percent of the outstanding balance applies to any payment not
+received by the due date shown on the invoice. The fee accrues daily at 1.5
+percent of the original outstanding amount, not of the running balance, and is
+capped at 15 percent of the invoice total.
+
+A grace period of 5 calendar days applies to invoices under 50 in total. No late
+fee is assessed during the grace period. Accounts more than 30 days overdue are
+suspended automatically, and reactivation after suspension requires payment of
+all outstanding amounts including accrued fees.
+
+Disputed invoices are not subject to late fees while the dispute is open. To
+open a dispute, contact billing support with the invoice number and the line
+items in question within 60 days of the invoice date.
