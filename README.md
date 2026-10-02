@@ -1,6 +1,6 @@
 # Multimodal Financial Assistant
 
-Reads a receipt or invoice, extracts structured fields, retrieves the governing policy from a ChromaDB vector store, and answers only from what it retrieved. Images use the vision model; text-based PDFs are parsed with PyMuPDF.
+Reads a receipt or invoice, extracts structured fields, retrieves relevant policy context from a ChromaDB vector store using the user question plus document fields, and generates a policy-grounded answer with source citations. Images use the vision model; text-based PDFs are parsed with PyMuPDF.
 
 ```
 PDF or image
@@ -125,3 +125,8 @@ interviewer will actually ask, with answers grounded in this code.
   would need measuring.
 - **Document text is untrusted prompt data.** A malicious document can attempt prompt injection; a production version should isolate document content from system instructions.
 - **100-word chunks can split a sentence.** Sentence-aware splitting would be better; the current sample corpus is too small to establish retrieval quality at scale.
+
+
+## License
+
+MIT.
