@@ -1,6 +1,24 @@
-groq
-pymupdf
-scikit-learn
-streamlit
-python-dotenv
-pytest
+# Multimodal Financial Assistant — dependencies
+#
+# Tested on Python 3.13.14. ChromaDB and sentence-transformers need 3.9+;
+# torch (pulled in by sentence-transformers) officially supports 3.11+.
+
+# --- LLM provider -----------------------------------------------------------
+groq>=1.0.0
+
+# --- Document parsing -------------------------------------------------------
+pymupdf>=1.24.0              # PDF text extraction (fast, handles layout)
+
+# --- Vector store + embeddings (the RAG layer) -----------------------------
+chromadb>=1.5.0               # persistent vector store
+sentence-transformers>=5.0.0  # local embeddings (all-MiniLM-L6-v2)
+
+# --- UI + API ---------------------------------------------------------------
+streamlit>=1.38.0
+fastapi>=0.110.0
+uvicorn>=0.29.0
+
+# --- Config + tests ---------------------------------------------------------
+python-dotenv>=1.0.0
+pytest>=8.0.0
+httpx>=0.27.0
