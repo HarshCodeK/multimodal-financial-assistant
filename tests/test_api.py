@@ -121,3 +121,14 @@ def test_image_rejects_excessive_pixel_count(monkeypatch):
     monkeypatch.setattr("financial_assistant.models.Image.open", lambda _: OversizedImage())
     with pytest.raises(ValidationError, match="pixel limit"):
         ImageRequest(question="Read the statement", image_data_url=valid_jpeg_data_url())
+
+
+def test_unmatched_paths_do_not_create_unbounded_metric_labels():
+    configure_fakes()
+    client = TestClient(app)
+    client.get("/unmatched-a")
+    client.get("/unmatched-b")
+    routes = client.get("/metrics").json()["routes"]
+    assert "GET <unmatched>" in routes
+    assert "GET /unmatched-a" not in routes
+    assert "GET /unmatched-b" not in routes
