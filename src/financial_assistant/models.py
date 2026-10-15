@@ -6,6 +6,7 @@ from PIL import Image
 from pydantic import BaseModel, Field, field_validator
 
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
+MAX_IMAGE_PIXELS = 40_000_000
 
 
 class SourceType(str, Enum):
@@ -62,6 +63,9 @@ class ImageRequest(BaseModel):
             expected_format = "PNG" if header.startswith("data:image/png") else "JPEG"
             if image.format != expected_format:
                 raise ValueError("image bytes do not match the declared image type")
+            width, height = image.size
+            if width <= 0 or height <= 0 or width * height > MAX_IMAGE_PIXELS:
+                raise ValueError("image dimensions exceed the supported pixel limit")
             image.verify()
         except (OSError, Image.DecompressionBombError) as exc:
             raise ValueError("image_data_url is not a valid supported image") from exc
