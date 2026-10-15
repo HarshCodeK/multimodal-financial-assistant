@@ -1,6 +1,6 @@
 [project]
 name = "multimodal-financial-assistant"
-version = "0.2.0"
+version = "0.3.0"
 description = "A grounded financial-policy assistant with document and image inputs."
 requires-python = ">=3.11"
 dependencies = [

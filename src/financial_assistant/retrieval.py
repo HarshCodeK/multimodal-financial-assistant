@@ -31,12 +31,29 @@ class ChromaRetriever:
     def upsert(self, chunks: list[DocumentChunk]) -> None:
         if not chunks:
             return
+        # Remove duplicate IDs inside one batch, which can occur with repeated identical chunks.
+        unique = {self._chunk_id(chunk): chunk for chunk in chunks}
+        ids = list(unique)
+        chunks = list(unique.values())
+        vectors = self.embedder.embed([chunk.text for chunk in chunks])
+        new_ids_by_source: dict[str, set[str]] = {}
+        for chunk, chunk_id in zip(chunks, ids):
+            new_ids_by_source.setdefault(chunk.source, set()).add(chunk_id)
+        old_ids_by_source: dict[str, set[str]] = {}
+        for source in new_ids_by_source:
+            existing = self.collection.get(where={"source": source}, include=["metadatas"])
+            old_ids_by_source[source] = set(existing.get("ids", []))
         self.collection.upsert(
-            ids=[self._chunk_id(chunk) for chunk in chunks],
+            ids=ids,
             documents=[chunk.text for chunk in chunks],
-            embeddings=self.embedder.embed([chunk.text for chunk in chunks]),
+            embeddings=vectors,
             metadatas=[{"source": chunk.source, "source_type": chunk.source_type.value, "page": chunk.page or 0} for chunk in chunks],
         )
+        # Clean stale chunks only after the new content was embedded and upserted.
+        for source, old_ids in old_ids_by_source.items():
+            stale_ids = sorted(old_ids - new_ids_by_source[source])
+            if stale_ids:
+                self.collection.delete(ids=stale_ids)
 
     def search(self, question: str, k: int = 4) -> list[RetrievedChunk]:
         count = self.collection.count()

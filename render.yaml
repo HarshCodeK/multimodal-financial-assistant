@@ -13,3 +13,7 @@ services:
         value: /tmp/assistant-chroma
       - key: SQLITE_PATH
         value: /tmp/interactions.db
+      - key: GROQ_API_KEY
+        sync: false
+      - key: INGEST_API_TOKEN
+        sync: false

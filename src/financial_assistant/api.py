@@ -1,11 +1,15 @@
+import hmac
 import json
 import logging
 import os
+from collections import deque
 from pathlib import Path
-from threading import RLock
+from threading import Lock, RLock
+from time import monotonic
 
 import httpx
-from fastapi import FastAPI, File, HTTPException, Response, UploadFile
+from fastapi import FastAPI, File, Header, HTTPException, Response, UploadFile
+from fastapi.responses import JSONResponse
 
 from .answer import GroundedAnswerer
 from .extract import MAX_PDF_BYTES, extract_pdf_bytes
@@ -16,8 +20,7 @@ from .retrieval import ChromaRetriever, SentenceTransformerEmbedder
 from .store import InteractionStore
 
 logger = logging.getLogger(__name__)
-app = FastAPI(title="Multimodal Financial Assistant", version="0.2.0")
-
+app = FastAPI(title="Multimodal Financial Assistant", version="0.3.0")
 _retriever = None
 _answerer = None
 _store = None
@@ -25,6 +28,8 @@ _vision_client = None
 _dependencies_lock = RLock()
 _metrics = ProcessMetrics()
 _METRICS_EXCLUDED = {"/health", "/ready", "/metrics"}
+_provider_hits: deque[float] = deque()
+_provider_hits_lock = Lock()
 
 
 def configure(retriever, answerer, store=None, vision_client=None):
@@ -37,24 +42,32 @@ def _ensure_dependencies():
     global _retriever, _answerer, _store, _vision_client
     with _dependencies_lock:
         if _retriever is None:
-            _retriever = ChromaRetriever(
-                os.getenv("CHROMA_DIR", "./.chroma"),
-                SentenceTransformerEmbedder(os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")),
-            )
+            _retriever = ChromaRetriever(os.getenv("CHROMA_DIR", "./.chroma"), SentenceTransformerEmbedder(os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")))
             if _retriever.collection.count() == 0:
                 sample_path = Path(__file__).resolve().parents[2] / "data" / "sample_policy.txt"
                 if sample_path.exists():
-                    _retriever.upsert([DocumentChunk(
-                        source=sample_path.name,
-                        source_type=SourceType.text,
-                        text=sample_path.read_text(encoding="utf-8").strip(),
-                    )])
+                    _retriever.upsert([DocumentChunk(source=sample_path.name, source_type=SourceType.text, text=sample_path.read_text(encoding="utf-8").strip())])
         if _answerer is None:
             _answerer = GroundedAnswerer(GroqClient())
         if _store is None:
             _store = InteractionStore(os.getenv("SQLITE_PATH", "./data/interactions.db"))
         if _vision_client is None:
             _vision_client = GroqClient()
+
+
+def _provider_request_allowed() -> bool:
+    try:
+        limit = max(1, int(os.getenv("LLM_REQUESTS_PER_MINUTE", "30")))
+    except ValueError:
+        limit = 30
+    now = monotonic()
+    with _provider_hits_lock:
+        while _provider_hits and now - _provider_hits[0] >= 60:
+            _provider_hits.popleft()
+        if len(_provider_hits) >= limit:
+            return False
+        _provider_hits.append(now)
+        return True
 
 
 @app.middleware("http")
@@ -64,6 +77,9 @@ async def collect_request_metrics(request, call_next):
     started = _metrics.start()
     status_code = 500
     try:
+        if request.url.path in {"/ask", "/describe-image"} and os.getenv("GROQ_API_KEY") and not _provider_request_allowed():
+            status_code = 429
+            return JSONResponse(status_code=429, content={"detail": "the demo's shared provider request limit was reached; retry later"})
         response = await call_next(request)
         status_code = response.status_code
         return response
@@ -93,16 +109,27 @@ def metrics():
 
 
 @app.post("/ingest", response_model=IngestResponse)
-async def ingest(file: UploadFile = File(...)):
+async def ingest(file: UploadFile = File(...), x_ingest_token: str = Header(default="")):
+    configured_token = os.getenv("INGEST_API_TOKEN", "")
+    if not configured_token:
+        await file.close()
+        raise HTTPException(status_code=503, detail="document ingestion is disabled; configure INGEST_API_TOKEN")
+    if not x_ingest_token or not hmac.compare_digest(x_ingest_token, configured_token):
+        await file.close()
+        raise HTTPException(status_code=401, detail="invalid ingestion token")
     if not file.filename or not file.filename.lower().endswith(".pdf"):
+        await file.close()
         raise HTTPException(status_code=415, detail="upload a PDF file")
     raw = await file.read(MAX_PDF_BYTES + 1)
     if len(raw) > MAX_PDF_BYTES:
+        await file.close()
         raise HTTPException(status_code=413, detail="PDF exceeds the 10 MiB limit")
     try:
         chunks = extract_pdf_bytes(raw, source_name=Path(file.filename).name)
     except ValueError as exc:
+        await file.close()
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    await file.close()
     if not chunks:
         raise HTTPException(status_code=422, detail="PDF contains no extractable text; scanned PDFs are not OCR-processed")
     try:
@@ -111,8 +138,6 @@ async def ingest(file: UploadFile = File(...)):
     except Exception as exc:
         logger.exception("document indexing failed")
         raise HTTPException(status_code=503, detail="document indexing is temporarily unavailable") from exc
-    finally:
-        await file.close()
     return IngestResponse(source=Path(file.filename).name, chunks_indexed=len(chunks), pages_extracted=len({chunk.page for chunk in chunks}))
 
 

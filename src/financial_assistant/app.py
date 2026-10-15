@@ -27,12 +27,15 @@ def show_api_error(response):
 
 
 st.subheader("1. Index a policy document")
+st.caption("Indexing changes the shared demo collection and requires an owner-issued access token.")
 policy_pdf = st.file_uploader("Upload a text-based PDF policy", type=["pdf"], key="policy_pdf")
-if st.button("Index policy PDF", disabled=policy_pdf is None):
+ingest_token = st.text_input("Ingestion token", type="password", help="Use only a token provided by the site owner.")
+if st.button("Index policy PDF", disabled=policy_pdf is None or not ingest_token):
     try:
         with st.spinner("Extracting pages and indexing chunks..."):
             response = requests.post(
                 f"{api_url}/ingest",
+                headers={"X-Ingest-Token": ingest_token},
                 files={"file": (policy_pdf.name, policy_pdf.getvalue(), "application/pdf")},
                 timeout=90,
             )
