@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: multimodal-financial-assistant
+    runtime: python
+    plan: free
+    buildCommand: pip install -e .
+    startCommand: uvicorn financial_assistant.api:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.0
+      - key: CHROMA_DIR
+        value: /tmp/assistant-chroma
+      - key: SQLITE_PATH
+        value: /tmp/interactions.db

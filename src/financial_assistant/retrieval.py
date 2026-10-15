@@ -1,15 +1,20 @@
+import hashlib
 from typing import Protocol
 from .models import DocumentChunk, RetrievedChunk
 
+
 class Embedder(Protocol):
     def embed(self, texts: list[str]) -> list[list[float]]: ...
+
 
 class SentenceTransformerEmbedder:
     def __init__(self, model_name: str = "all-MiniLM-L6-v2"):
         from sentence_transformers import SentenceTransformer
         self.model = SentenceTransformer(model_name)
+
     def embed(self, texts: list[str]) -> list[list[float]]:
         return self.model.encode(texts, normalize_embeddings=True).tolist()
+
 
 class ChromaRetriever:
     def __init__(self, persist_dir: str, embedder: Embedder, collection_name: str = "financial_policy"):
@@ -18,20 +23,27 @@ class ChromaRetriever:
         self.collection = self.client.get_or_create_collection(collection_name)
         self.embedder = embedder
 
+    @staticmethod
+    def _chunk_id(chunk: DocumentChunk) -> str:
+        stable_key = "\x1f".join((chunk.source_type.value, chunk.source, str(chunk.page or 0), chunk.text))
+        return hashlib.sha256(stable_key.encode("utf-8")).hexdigest()
+
     def upsert(self, chunks: list[DocumentChunk]) -> None:
         if not chunks:
             return
-        ids = [f"{i}:{c.source}:{c.page or 0}" for i, c in enumerate(chunks)]
         self.collection.upsert(
-            ids=ids,
-            documents=[c.text for c in chunks],
-            embeddings=self.embedder.embed([c.text for c in chunks]),
-            metadatas=[{"source": c.source, "source_type": c.source_type.value, "page": c.page or 0} for c in chunks],
+            ids=[self._chunk_id(chunk) for chunk in chunks],
+            documents=[chunk.text for chunk in chunks],
+            embeddings=self.embedder.embed([chunk.text for chunk in chunks]),
+            metadatas=[{"source": chunk.source, "source_type": chunk.source_type.value, "page": chunk.page or 0} for chunk in chunks],
         )
 
     def search(self, question: str, k: int = 4) -> list[RetrievedChunk]:
-        result = self.collection.query(query_embeddings=self.embedder.embed([question]), n_results=k)
+        count = self.collection.count()
+        if count == 0:
+            return []
+        result = self.collection.query(query_embeddings=self.embedder.embed([question]), n_results=min(k, count))
         docs = result.get("documents", [[]])[0]
         distances = result.get("distances", [[]])[0]
         metas = result.get("metadatas", [[]])[0]
-        return [RetrievedChunk(text=d, distance=float(distances[i]), source=metas[i]["source"], source_type=metas[i]["source_type"], page=(metas[i].get("page") or None)) for i, d in enumerate(docs)]
+        return [RetrievedChunk(text=document, distance=float(distances[i]), source=metas[i]["source"], source_type=metas[i]["source_type"], page=(metas[i].get("page") or None)) for i, document in enumerate(docs)]

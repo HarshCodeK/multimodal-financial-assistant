@@ -1,59 +1,90 @@
 # Multimodal Financial Assistant
 
-A small, grounded assistant for financial-policy documents. It combines document extraction, vector retrieval, a configurable LLM, and an API/UI boundary. Unsupported questions are refused rather than guessed.
+A small, evidence-grounded assistant for financial-policy documents. Index a text-based PDF, ask a question against retrieved document chunks, inspect returned source evidence, and separately use vision inference to summarize a statement or chart image.
+
+This is a portfolio system, not financial advice software. It does not execute transactions or guarantee error-free financial interpretation.
 
 ## What it demonstrates
 
-- PDF text extraction with page provenance
-- ChromaDB semantic retrieval
-- Local sentence-transformer embeddings
-- Grounded LLM answers with an explicit refusal path
-- Image validation and vision-model input encoding
-- FastAPI service + Streamlit demo
-- SQLite interaction logging
-- Docker and GitHub Actions
-- Testable provider boundaries without requiring API credentials
+- Bounded PDF upload and page-level text extraction with source provenance.
+- Stable chunk IDs so re-indexing identical chunks is idempotent.
+- ChromaDB retrieval with local sentence-transformer embeddings.
+- Grounded LLM answers with an explicit unsupported-answer path.
+- Separate image-description endpoint with bounded image-data URL input.
+- FastAPI and Streamlit interfaces.
+- SQLite interaction logging with WAL and a writer wait timeout.
+- Process-local request metrics, CI tests, Docker support and a free-host demo blueprint.
 
 ## Architecture
 
-`documents → extraction → embeddings → ChromaDB → retrieval → grounded answer`
+~~~text
+PDF upload → bounded extraction → stable chunk IDs → embeddings → ChromaDB
+Question → embedding → top-k retrieved chunks → grounded answer model → answer + sources
+Image upload → bounded vision request → image description
+~~~
 
-The Streamlit UI calls FastAPI. SQLite stores interaction history; it is deliberately not used as the vector database.
+The Streamlit interface calls FastAPI. SQLite stores interaction history; it is not the vector database. Indexing a PDF and querying indexed text are separate operations, so a successful upload is not evidence that the LLM answered correctly.
 
-See `docs/ARCHITECTURE.md`, `docs/INTERVIEW_QA.md`, and `docs/THREAT_MODEL.md` for design decisions and interview discussion.
+## Quickstart
 
-## Run
+Requires Python 3.11+.
 
-```bash
+~~~bash
 python -m venv .venv
 source .venv/bin/activate
 pip install -e .
 uvicorn financial_assistant.api:app --reload
-```
+~~~
 
-In another shell:
+In another terminal, start the UI:
 
-```bash
+~~~bash
 streamlit run src/financial_assistant/app.py
-```
+~~~
 
-Set `GROQ_API_KEY` for live answers. `GROQ_MODEL` and `GROQ_VISION_MODEL` are configurable.
+Set ASSISTANT_API_URL if the UI and API do not share a host. Set GROQ_API_KEY for LLM and vision answers. Without that key, the API can remain live but provider-dependent answers are unavailable. The sample policy is indexed on first initialization when the collection is empty.
 
-## Tests
+## API
 
-```bash
+- GET /health: liveness only.
+- GET /ready: initializes dependencies and reports readiness; model initialization may be slow or memory-intensive.
+- GET /metrics: process-local route request counts, status codes, in-flight count and recent latency percentiles.
+- POST /ingest: multipart field named file, PDF only, up to 10 MiB and 100 pages; extracts a bounded amount of text.
+- POST /ask: accepts {"question":"What is the meal reimbursement limit?"}; returns answer and source chunks.
+- POST /describe-image: accepts a PNG/JPEG data URL and a question for the configured vision model.
+- GET /docs: interactive API documentation.
+
+Scanned PDFs are not OCR-processed. A PDF with no extractable text receives a validation error rather than silently creating an empty index.
+
+## Run tests
+
+~~~bash
 pytest
-```
+~~~
 
-The Chroma integration test is skipped locally if ChromaDB is unavailable. CI installs the declared dependencies and exercises the real Chroma round trip.
+The real Chroma integration test runs when dependencies are installed. External Groq calls are not part of CI; tests use deterministic fakes so CI does not require secrets or incur provider cost.
 
-## Honest scope
+## Reproducible reliability testing
 
-This is a portfolio engineering project, not financial advice software. It does not execute payments, certify compliance, guarantee hallucination-free output, or provide production document governance. Image questions use a dedicated `/describe-image` vision endpoint. The persistent retrieval corpus remains text-first, so image-derived facts are not automatically added to ChromaDB. The image endpoint accepts bounded PNG/JPEG data URLs and sends them to the configured vision model.
+See docs/RELIABILITY_LAB.md. Example:
+
+~~~bash
+python scripts/load_test.py --base-url http://127.0.0.1:8000 --path /ask --payload '{"question":"What is the meal reimbursement limit?"}' --requests 100 --concurrency 10 --output artifacts/ask-10.json
+curl http://127.0.0.1:8000/metrics
+~~~
+
+The report captures client-observed throughput, p50/p95/p99 latency, error rate, HTTP status codes, transport failures and response bytes. It does not assert production users, model accuracy, or server resource usage. Record the commit, hosting plan, cold/warm state and request mix. Keep failure and retest results together.
+
+## Deployment
+
+The root render.yaml is a free Render API demo blueprint. The Streamlit UI can be deployed separately through Streamlit Community Cloud, with ASSISTANT_API_URL pointing at the API URL. A free host may sleep after inactivity and has ephemeral storage, and the embedding stack may exceed a small instance's memory. Validate startup, first-question behavior and sustained load before sharing performance numbers.
+
+## Security and limitations
+
+PDF bytes, page count and extracted text are bounded; filenames are reduced to their basename before source storage. Prompt injection is not fully solved. The interaction database stores questions and answers, so use synthetic/demo documents and do not upload private bank statements or sensitive customer material to a public deployment.
+
+Known limitations: retrieval quality depends on the embedding model and indexed document; no OCR for scanned PDFs; no document access control or tenant isolation; provider quota/availability affects answers; local Chroma/SQLite storage is not durable or horizontally shared; no measured production accuracy or capacity claim.
 
 ## License
 
-MIT. The repository includes the standard MIT license text in `LICENSE`.
-
-## Verification
-The default CI workflow runs unit tests, the Chroma retrieval integration test, source compilation, whitespace checks, and a Docker health smoke test.
+MIT. See LICENSE.
