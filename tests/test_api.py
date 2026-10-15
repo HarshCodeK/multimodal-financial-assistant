@@ -1,3 +1,4 @@
+import pytest
 import base64
 from io import BytesIO
 
@@ -103,3 +104,20 @@ def test_ingestion_indexes_bounded_extracted_chunks(monkeypatch):
     assert response.status_code == 200
     assert response.json()["chunks_indexed"] == 1
     assert len(retriever.upserted) == 1
+
+
+
+def test_image_rejects_excessive_pixel_count(monkeypatch):
+    from pydantic import ValidationError
+    from financial_assistant.models import ImageRequest
+
+    class OversizedImage:
+        format = "JPEG"
+        size = (10_000, 10_000)
+
+        def verify(self):
+            return None
+
+    monkeypatch.setattr("financial_assistant.models.Image.open", lambda _: OversizedImage())
+    with pytest.raises(ValidationError, match="pixel limit"):
+        ImageRequest(question="Read the statement", image_data_url=valid_jpeg_data_url())
