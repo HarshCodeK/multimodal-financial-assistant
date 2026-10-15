@@ -68,7 +68,7 @@ async def run(args: argparse.Namespace) -> dict:
         "scope": "client-side HTTP behavior; no claim about server CPU or memory",
         "base_url": base_url, "method": args.method, "path": args.path,
         "requested_requests": args.requests, "configured_concurrency": args.concurrency,
-        "duration_seconds": round(duration, 3), "throughput_requests_per_second": round(success_count / duration, 2),
+        "duration_seconds": round(duration, 3), "throughput_requests_per_second": round(success / duration, 2),
         "attempted_requests_per_second": round(args.requests / duration, 2),
         "success_count": success, "error_count": errors, "error_rate": round(errors / args.requests, 5),
         "latency_ms": {"p50": percentile(latencies, 0.50), "p95": percentile(latencies, 0.95), "p99": percentile(latencies, 0.99), "max": round(max(latencies), 2) if latencies else None},
