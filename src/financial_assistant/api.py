@@ -86,6 +86,9 @@ async def collect_request_metrics(request, call_next):
     finally:
         route = request.scope.get("route")
         route_name = getattr(route, "path", "<unmatched>")
+        # Early middleware responses happen before routing populates scope["route"].
+        if route is None and request.url.path in {"/ask", "/describe-image"}:
+            route_name = request.url.path
         _metrics.finish(f"{request.method} {route_name}", status_code, started)
 
 
