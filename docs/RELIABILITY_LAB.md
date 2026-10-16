@@ -23,6 +23,7 @@ Test ingestion separately from Q&A. They stress different paths. Ingestion requi
 
 - Record commit SHA, host/plan, region, request mix, cold/warm state, request count and concurrency. Repeat each level at least three times.
 - The report contains p50/p95/p99/max latency, throughput, error rate, status codes and transport failures. It is client-observed, not a server CPU/memory report.
+- The generator uses a bounded worker pool, caps a run at 100,000 requests and 10,000 configured in-flight requests, and treats only 2xx responses as successful. These are client-side safety bounds, not target-capacity claims.
 - /metrics is process-local, resets on restart, and stores percentiles for a bounded recent sample window.
 - Concurrency means in-flight requests from this generator, not real users or persistent sessions.
 - Do not publish capacity or accuracy figures until measured on a defined version, dataset and host.
