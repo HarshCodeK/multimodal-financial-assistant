@@ -12,7 +12,7 @@ jobs:
           python-version: "3.11"
       - run: pip install -e . pytest
       - run: pytest
-      - run: python -m compileall src
+      - run: python -m compileall -q src scripts
       - run: git diff --check
   docker:
     runs-on: ubuntu-latest
