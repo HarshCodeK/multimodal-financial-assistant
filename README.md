@@ -85,7 +85,7 @@ A free host may sleep after inactivity and has ephemeral storage, and the embedd
 
 ## Security and limitations
 
-The ingestion endpoint cannot be used without a configured owner token. When GROQ_API_KEY exists, /ask and /describe-image share a process-local default cap of 30 requests/minute (tunable with LLM_REQUESTS_PER_MINUTE); this is not distributed or user-specific rate limiting. Prompt injection is not fully solved. The interaction database stores questions and answers, so use synthetic/demo documents and do not upload private bank statements or sensitive customer material to a public deployment.
+The ingestion endpoint cannot be used without a configured owner token. When GROQ_API_KEY exists, /ask and /describe-image share a process-local default cap of 30 requests/minute (tunable with LLM_REQUESTS_PER_MINUTE); this is not distributed or user-specific rate limiting. Prompt injection is not fully solved. The interaction database retains the newest 10,000 question/answer records by default. It stores user-provided questions and generated answers, so use synthetic/demo documents and do not upload private bank statements or sensitive customer material to a public deployment.
 
 Known limitations: retrieval quality depends on the embedding model and source document; no OCR for scanned PDFs; no tenant isolation; provider quota/availability affects answers; local Chroma/SQLite storage is not durable or horizontally shared; no measured production accuracy or capacity claim.
 
