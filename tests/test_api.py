@@ -132,3 +132,18 @@ def test_unmatched_paths_do_not_create_unbounded_metric_labels():
     assert "GET <unmatched>" in routes
     assert "GET /unmatched-a" not in routes
     assert "GET /unmatched-b" not in routes
+
+
+def test_provider_limit_counts_early_rejections_on_the_correct_route(monkeypatch):
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
+    monkeypatch.setenv("LLM_REQUESTS_PER_MINUTE", "1")
+    configure_fakes()
+    client = TestClient(app)
+
+    first = client.post("/ask", json={"question": "What is the meal limit?"})
+    second = client.post("/ask", json={"question": "What is the hotel limit?"})
+
+    assert first.status_code == 200
+    assert second.status_code == 429
+    statuses = client.get("/metrics").json()["routes"]["POST /ask"]["status_codes_since_start"]
+    assert statuses.get("429", 0) >= 1
