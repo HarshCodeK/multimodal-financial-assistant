@@ -38,4 +38,4 @@ Test ingestion separately from Q&A. They stress different paths. Ingestion requi
 
 ## Safety and deployment notes
 
-If GROQ_API_KEY is configured, /ask and /describe-image share a process-local default cap of 30 calls per minute (adjust with LLM_REQUESTS_PER_MINUTE). It is a shared ceiling, not per-user or distributed rate limiting. The embedding stack may exceed a small free instance's memory, so inspect host logs before publishing results. Free Render services sleep after inactivity and do not provide production uptime guarantees.
+/ask and /describe-image share a process-local ceiling of 60 calls/minute by default (`API_REQUESTS_PER_MINUTE`). When `GROQ_API_KEY` is configured, the effective ceiling is also limited by `LLM_REQUESTS_PER_MINUTE` (default 30/minute). It is a shared ceiling, not per-user or distributed rate limiting. The embedding stack may exceed a small free instance's memory, so inspect host logs before publishing results. Free Render services sleep after inactivity and do not provide production uptime guarantees.
