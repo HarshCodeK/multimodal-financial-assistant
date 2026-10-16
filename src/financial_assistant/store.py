@@ -19,7 +19,7 @@ class InteractionStore:
             db.execute("PRAGMA busy_timeout=15000")
             db.execute("INSERT INTO interactions(question, supported, answer) VALUES (?, ?, ?)", (question, int(supported), answer))
             db.execute(
-                "DELETE FROM interactions WHERE id NOT IN "
-                "(SELECT id FROM interactions ORDER BY id DESC LIMIT ?)",
+                "DELETE FROM interactions WHERE id <= "
+                "(SELECT MAX(id) FROM interactions) - ?",
                 (self.max_records,),
             )
