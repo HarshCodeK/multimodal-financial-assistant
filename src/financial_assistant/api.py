@@ -57,9 +57,15 @@ def _ensure_dependencies():
 
 def _provider_request_allowed() -> bool:
     try:
-        limit = max(1, int(os.getenv("LLM_REQUESTS_PER_MINUTE", "30")))
+        limit = max(1, int(os.getenv("API_REQUESTS_PER_MINUTE", "60")))
     except ValueError:
-        limit = 30
+        limit = 60
+    if os.getenv("GROQ_API_KEY"):
+        try:
+            llm_limit = max(1, int(os.getenv("LLM_REQUESTS_PER_MINUTE", "30")))
+        except ValueError:
+            llm_limit = 30
+        limit = min(limit, llm_limit)
     now = monotonic()
     with _provider_hits_lock:
         while _provider_hits and now - _provider_hits[0] >= 60:
@@ -77,9 +83,9 @@ async def collect_request_metrics(request, call_next):
     started = _metrics.start()
     status_code = 500
     try:
-        if request.url.path in {"/ask", "/describe-image"} and os.getenv("GROQ_API_KEY") and not _provider_request_allowed():
+        if request.url.path in {"/ask", "/describe-image"} and not _provider_request_allowed():
             status_code = 429
-            return JSONResponse(status_code=429, content={"detail": "the demo's shared provider request limit was reached; retry later"})
+            return JSONResponse(status_code=429, content={"detail": "the demo's shared request limit was reached; retry later"})
         response = await call_next(request)
         status_code = response.status_code
         return response
