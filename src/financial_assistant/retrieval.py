@@ -1,4 +1,5 @@
 import hashlib
+import json
 from threading import RLock
 from typing import Protocol
 
@@ -35,8 +36,10 @@ class ChromaRetriever:
     @staticmethod
     def _chunk_id(chunk: DocumentChunk) -> str:
         # Content-sensitive IDs allow new chunks to be written before old IDs are removed.
-        identity = "\\0".join(
-            (chunk.source_type.value, chunk.source, str(chunk.page or 0), chunk.text)
+        identity = json.dumps(
+            [chunk.source_type.value, chunk.source, chunk.page or 0, chunk.text],
+            ensure_ascii=False,
+            separators=(",", ":"),
         )
         return hashlib.sha256(identity.encode("utf-8")).hexdigest()
 
