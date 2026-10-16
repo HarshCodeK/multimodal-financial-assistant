@@ -135,8 +135,12 @@ def test_unmatched_paths_do_not_create_unbounded_metric_labels():
 
 
 def test_provider_limit_counts_early_rejections_on_the_correct_route(monkeypatch):
+    import financial_assistant.api as api_module
+
     monkeypatch.setenv("GROQ_API_KEY", "test-key")
     monkeypatch.setenv("LLM_REQUESTS_PER_MINUTE", "1")
+    with api_module._provider_hits_lock:
+        api_module._provider_hits.clear()
     configure_fakes()
     client = TestClient(app)
 
