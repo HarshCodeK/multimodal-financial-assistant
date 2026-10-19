@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: multimodal-financial-assistant
+    runtime: python
+    plan: free
+    buildCommand: pip install --index-url https://download.pytorch.org/whl/cpu torch==2.5.1+cpu && pip install -e .
+    startCommand: uvicorn financial_assistant.api:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.0
+      - key: CHROMA_DIR
+        value: /tmp/assistant-chroma
+      - key: SQLITE_PATH
+        value: /tmp/interactions.db
+      - key: GROQ_API_KEY
+        sync: false
+      - key: INGEST_API_TOKEN
+        sync: false
