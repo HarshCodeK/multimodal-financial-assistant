@@ -6,6 +6,7 @@ from financial_assistant.vision import answer_image_question
 
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"fake-png-payload"
+WEBP = b"RIFF" + b"\x00\x00\x00\x00" + b"WEBP" + b"fake-webp-payload"
 
 
 class FakeCompletions:
@@ -46,6 +47,19 @@ def test_image_question_sends_image_and_question_to_vision_model():
     assert image_part["type"] == "image_url"
     assert image_part["image_url"]["url"].startswith("data:image/png;base64,")
     assert completions.kwargs["temperature"] == 0
+
+
+def test_image_question_supports_webp_signature():
+    completions = FakeCompletions()
+    answer_image_question(
+        WEBP,
+        "chart.webp",
+        "Describe this chart",
+        api_key="test-key",
+        client=make_client(completions),
+    )
+    image_part = completions.kwargs["messages"][1]["content"][1]
+    assert image_part["image_url"]["url"].startswith("data:image/webp;base64,")
 
 
 def test_image_question_rejects_empty_question():
