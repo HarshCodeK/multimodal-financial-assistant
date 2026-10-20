@@ -15,8 +15,8 @@ MAX_PDF_BYTES = 10 * 1024 * 1024
 MAX_PDF_PAGES = 100
 MAX_TOTAL_EXTRACTED_CHARS = 200_000
 MAX_IMAGE_PIXELS = 20_000_000
-CHUNK_WORDS = 180
-CHUNK_OVERLAP_WORDS = 35
+CHUNK_WORDS = 80
+CHUNK_OVERLAP_WORDS = 16
 
 
 def chunk_text(text: str, *, source: str, source_type: SourceType, page: int | None = None) -> list[DocumentChunk]:
