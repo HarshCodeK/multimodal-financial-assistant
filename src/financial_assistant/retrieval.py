@@ -87,6 +87,14 @@ class ChromaRetriever:
                 metadatas=metadatas,
             )
 
+    def clear_index(self) -> None:
+        """Delete all indexed chunks from the active PDF collection."""
+        with self._write_lock:
+            existing = self.collection.get(include=["metadatas"])
+            ids = existing.get("ids", [])
+            if ids:
+                self.collection.delete(ids=ids)
+
     def indexed_sources(self) -> list[str]:
         result = self.collection.get(include=["metadatas"])
         return sorted({
