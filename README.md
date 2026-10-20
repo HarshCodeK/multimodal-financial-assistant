@@ -1,95 +1,78 @@
 # Multimodal Financial Assistant
 
-A locally runnable portfolio demo that answers questions about financial-policy documents using retrieval-augmented generation (RAG), and analyzes receipt or statement images with a vision-capable Groq model.
+A **local-only** financial document demo. It extracts text from PDFs and receipt images, splits documents into overlapping chunks, creates sentence embeddings, and retrieves relevant passages with ChromaDB. It does not call Groq or require an API key.
 
-## Features
+## What it does
 
-- **PDF ingestion:** extract selectable text page by page, then index it in ChromaDB.
-- **RAG:** create local sentence-transformer embeddings, retrieve relevant chunks, and ask Groq to answer from those passages.
-- **Evidence display:** show the source document and page text used for supported answers.
-- **Image analysis:** send a validated PNG/JPEG to a Groq vision model to read visible financial information.
-- **SQLite logging:** record questions, answers, elapsed time, and structured PDF-ingestion results.
-- **Conservative JSON repair:** handle common model formatting issues without inventing missing fields.
-- **Local by default:** Streamlit calls the service layer directly. No separate FastAPI server, API URL, or ingestion token is required.
+- **PDF text extraction:** PyMuPDF extracts selectable text.
+- **OCR fallback:** RapidOCR reads scanned PDF pages that have little/no text layer and extracts text from receipt/statement images.
+- **Chunking:** text is split into 180-word chunks with 35-word overlap so context near chunk boundaries is retained.
+- **Semantic retrieval:** Sentence Transformers creates local embeddings; ChromaDB stores chunks and retrieves semantically similar passages.
+- **Grounded results:** answers show the best matching passages and their source/page. This version is intentionally extractive; it does not generate claims with an external LLM.
+- **SQLite logs:** records questions, results, elapsed time, and PDF indexing metadata.
+- **One local process:** Streamlit calls Python services directly. No FastAPI server, Docker, API URL, ingestion token, Groq key, or cloud model calls.
 
-This is a learning/portfolio demo, not financial advice software. It does not execute transactions or guarantee correct interpretation.
+## Run on Windows
 
-## Quickstart (Windows PowerShell)
-
-Use Python 3.11 or newer. From the project root:
+Use Python 3.11 or newer. From the repository folder:
 
 ~~~powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 pip install -e .
-$env:GROQ_API_KEY="your-groq-api-key"
 python -m streamlit run src/financial_assistant/app.py
 ~~~
 
-The browser preview opens at http://localhost:8501. Keep only this one terminal running.
+Open http://localhost:8501. You do not need a second terminal.
 
-For macOS/Linux, activate the virtual environment with `. .venv/bin/activate`, install with `pip install -e .`, set `GROQ_API_KEY` in the shell, and run the same Streamlit command.
-
-The first launch downloads the configured sentence-transformer model and creates a dedicated local Chroma collection. `data/sample_policy.txt` is automatically indexed or refreshed when the app initializes. The repository also includes [`data/sample_financial_policy.pdf`](data/sample_financial_policy.pdf), a fictional PDF you can upload through the UI to test the full ingestion flow. Re-uploading a PDF with the same filename replaces that source's indexed chunks.
+The app itself should open without loading the embedding model. The first time you index a PDF or ask a question, Sentence Transformers downloads `all-MiniLM-L6-v2` if it is not cached; this can take a few minutes depending on the connection. The first OCR action may also initialize/download local OCR model assets. Subsequent use reuses the loaded models.
 
 ## Try it
 
-Ask about the built-in sample policy:
-- What is the meal reimbursement limit?
-- What documentation is required for a claim?
-- How soon must employees submit expenses?
-- What does the policy say about traffic fines?
-- Does the policy specify an international travel allowance?
+1. Click **Download sample financial policy PDF**.
+2. Upload the PDF and click **Index PDF**.
+3. Ask `What is the maximum daily meal reimbursement?`
+4. Inspect the displayed source passages and page numbers.
+5. Upload a receipt image and click **Extract text from image**.
 
-Then upload your own text-based financial policy PDF and ask questions whose answers are present in it. Upload a fictional receipt image and select **Inspect image** to test vision analysis.
+The bundled `data/sample_policy.txt` is also indexed automatically when the local index initializes.
 
 ## How it works
 
 ~~~text
-PDF → PyMuPDF text extraction → sentence-transformer embeddings → ChromaDB
-Question → retrieve relevant chunks → Groq LLM → grounded answer + evidence
-Receipt/image → image validation → Groq vision model → description of visible details
-Interactions → SQLite (question/answer, latency, extraction metadata)
+PDF → PyMuPDF text extraction → OCR fallback for scanned pages → 180-word chunks / 35-word overlap
+Question → local sentence embedding → ChromaDB semantic retrieval → relevant source passages
+Receipt image → local RapidOCR → recognized text
+Interaction metadata → SQLite
 ~~~
 
-The app and service layer run in the same Streamlit process. SQLite stores interaction logs; ChromaDB stores searchable document vectors. PDF and image paths are deliberately separate: image descriptions are not automatically added to the PDF retrieval index.
+## Technologies
 
-## Configuration and local files
-
-| Setting | Default | Purpose |
-| --- | --- | --- |
-| `GROQ_API_KEY` | unset | Required for LLM answers and image analysis |
-| `GROQ_MODEL` | `llama-3.1-8b-instant` | Text-answer model |
-| `GROQ_VISION_MODEL` | `qwen/qwen3.8-27b` | Image-analysis model |
-| `EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | Local embedding model |
-| `CHROMA_DIR` | `.chroma` | Local vector database directory |
-| `SQLITE_PATH` | `data/interactions.db` | Interaction log database |
-
-Do not commit API keys or real customer/financial documents. The local Chroma index and SQLite log persist between launches and are ignored by Git.
+- Python
+- Streamlit
+- PyMuPDF
+- RapidOCR (local OCR)
+- Sentence Transformers (`all-MiniLM-L6-v2`)
+- ChromaDB
+- SQLite
 
 ## Limitations
 
-- **Scanned PDFs are not OCR-processed.** PDFs need selectable text. Image uploads are read by a vision model, which can still misread digits or totals.
-- The vision model's output is not a deterministic OCR transcript; verify important figures against the image.
-- Retrieval quality depends on the embedding model and the indexed documents. The model can still make mistakes despite grounding instructions.
-- No user accounts, multi-tenant isolation, shared cloud index, or production data governance.
-- Provider availability and quota affect answers. Groq API usage may incur limits or costs.
-- Not financial advice and not suitable for making decisions without human verification.
+- Results are extractive: the app returns relevant source passages, not free-form LLM-generated summaries.
+- OCR can confuse similar characters and numbers. Verify financial figures against the original.
+- The embedding model and OCR runtime may need downloads on first use. If model downloads fail, the app shows an error when the relevant feature is used.
+- This is a local single-user demo, not a production financial product or financial advice.
 
 ## Tests
-
-Install the project dependencies, then run:
 
 ~~~powershell
 python -m pytest -q
 ~~~
 
-Tests cover PDF extraction, vector retrieval, JSON repair, SQLite logging, and the local service workflow using fakes. They do not prove live Groq model accuracy or live API availability.
+The automated tests use fakes for OCR in unit tests; they do not guarantee OCR accuracy on every real receipt or scanned PDF.
 
-## Interview explanation
-
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the data flow and [docs/INTERVIEW_QA.md](docs/INTERVIEW_QA.md) for concise interview answers.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/INTERVIEW_QA.md](docs/INTERVIEW_QA.md).
 
 ## License
 
