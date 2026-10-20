@@ -31,7 +31,7 @@ The browser preview opens at http://localhost:8501. Keep only this one terminal 
 
 For macOS/Linux, activate the virtual environment with `. .venv/bin/activate`, install with `pip install -e .`, set `GROQ_API_KEY` in the shell, and run the same Streamlit command.
 
-The first launch downloads the configured sentence-transformer model and creates a local Chroma collection. On an empty collection, `data/sample_policy.txt` is indexed automatically. You can also upload a text-based PDF from the UI. Re-uploading a PDF with the same filename replaces that source's indexed chunks.
+The first launch downloads the configured sentence-transformer model and creates a local Chroma collection. On an empty collection, `data/sample_policy.txt` is indexed automatically. The repository also includes [`data/sample_financial_policy.pdf`](data/sample_financial_policy.pdf), a fictional PDF you can upload through the UI to test the full ingestion flow. Re-uploading a PDF with the same filename replaces that source's indexed chunks.
 
 ## Try it
 
