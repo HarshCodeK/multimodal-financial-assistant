@@ -1,1 +1,25 @@
-Travel meals are reimbursed up to 500 INR per meal. Receipts are required for expenses above 250 INR.
+ACME TECHNOLOGIES - FINANCIAL EXPENSE POLICY
+Fictional sample document for software testing only.
+Effective date: 1 October 2026
+
+1. MEAL REIMBURSEMENT
+Business meals are reimbursed up to INR 1,200 per employee per day.
+
+2. HOTEL ACCOMMODATION
+Hotel accommodation is reimbursed up to INR 5,000 per night.
+
+3. CLAIM DEADLINE
+Employees must submit expense claims within 15 calendar days.
+
+4. REQUIRED DOCUMENTATION
+Claims require an itemized receipt, purchase date, amount, business purpose,
+and project or department. Claims above the limit require manager approval.
+
+5. EXCLUSIONS
+Personal purchases and traffic fines are not reimbursable.
+
+6. PROCESSING TIME
+Finance reviews complete claims within 7 business days.
+
+International travel allowance is not specified in this sample policy.
+This fictional document is not a real company policy or financial advice.
