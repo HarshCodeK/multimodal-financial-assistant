@@ -12,7 +12,7 @@ Run `python -m streamlit run src/financial_assistant/app.py`. The Streamlit UI c
 
 1. PyMuPDF extracts selectable text page by page.
 2. Pages with little or no text are rendered to images and passed through local RapidOCR.
-3. Text is split into 180-word chunks with 35-word overlap.
+3. Text is split into 80-word chunks with 16-word overlap.
 4. Sentence Transformers embeds the chunks locally.
 5. ChromaDB persists vectors and source/page metadata.
 6. A question is embedded and the closest chunks are retrieved.
@@ -22,7 +22,7 @@ The embedding model is initialized only after the user first indexes a PDF or as
 
 ## Image OCR
 
-Uploaded images are validated with Pillow and passed to RapidOCR locally. Recognized text lines are preserved and displayed. The user can then ask a question; a small lexical matcher ranks lines by overlap with question terms and displays the matching OCR lines as evidence. It abstains when there is no meaningful overlap. This is deliberately transparent extractive matching, not an LLM and not semantic retrieval. No image is sent to a remote vision API. OCR is text recognition, not general visual reasoning; verify totals and dates.
+Uploaded images are validated with Pillow and passed to RapidOCR locally. Recognized text lines are preserved and displayed. The user can then ask a question; a small lexical matcher ranks one-to-three-line windows by overlap with question terms and common price/amount synonyms, so a product name and its price can be matched when OCR puts them on adjacent lines and displays the matching OCR lines as evidence. It abstains when there is no meaningful overlap. This is deliberately transparent extractive matching, not an LLM and not semantic retrieval. No image is sent to a remote vision API. OCR is text recognition, not general visual reasoning; verify totals and dates.
 
 ## Persistence
 
