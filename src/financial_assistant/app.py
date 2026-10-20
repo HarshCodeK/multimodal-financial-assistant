@@ -44,6 +44,14 @@ st.write(
     "A small sample policy is indexed automatically on first launch. Upload a PDF to add "
     "or replace a document in your local index. Re-uploading the same filename replaces its chunks."
 )
+sample_pdf = PROJECT_ROOT / "data" / "sample_financial_policy.pdf"
+if sample_pdf.exists():
+    st.download_button(
+        "Download sample financial policy PDF",
+        data=sample_pdf.read_bytes(),
+        file_name="sample_financial_policy.pdf",
+        mime="application/pdf",
+    )
 policy_pdf = st.file_uploader("Choose a text-based PDF", type=["pdf"], key="policy_pdf")
 if st.button("Index PDF", disabled=policy_pdf is None):
     try:
