@@ -37,8 +37,8 @@ def test_long_text_is_split_into_overlapping_chunks():
     text = " ".join(f"word{i}" for i in range(500))
     chunks = chunk_text(text, source="policy.txt", source_type=SourceType.text)
     assert len(chunks) >= 3
-    assert len(chunks[0].text.split()) == 180
-    assert set(chunks[0].text.split()[-35:]) & set(chunks[1].text.split()[:35])
+    assert len(chunks[0].text.split()) == 80
+    assert chunks[0].text.split()[-16:] == chunks[1].text.split()[:16]
 
 
 def test_scanned_pdf_page_uses_ocr_fallback(tmp_path, monkeypatch):
@@ -91,5 +91,5 @@ def test_bundled_sample_policy_exercises_multiple_chunks():
     # Adjacent chunks retain the configured overlap from the preceding chunk.
     first_words = chunks[0].text.split()
     second_words = chunks[1].text.split()
-    assert first_words[-35:] == second_words[:35]
+    assert first_words[-16:] == second_words[:16]
 
