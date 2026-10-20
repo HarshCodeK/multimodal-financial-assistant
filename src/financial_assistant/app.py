@@ -10,7 +10,13 @@ import streamlit as st
 from dotenv import load_dotenv
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-GROQ_KEY_WAS_SET_BEFORE_DOTENV = bool(os.environ.get("GROQ_API_KEY"))
+_preexisting_groq_key = os.environ.get("GROQ_API_KEY", "").strip()
+GROQ_KEY_WAS_SET_BEFORE_DOTENV = bool(
+    _preexisting_groq_key and _preexisting_groq_key != "replace_with_your_groq_api_key"
+)
+# Empty/example-placeholder environment variables otherwise prevent python-dotenv from loading a real .env key.
+if not GROQ_KEY_WAS_SET_BEFORE_DOTENV:
+    os.environ.pop("GROQ_API_KEY", None)
 load_dotenv(PROJECT_ROOT / ".env")
 SRC = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SRC))
