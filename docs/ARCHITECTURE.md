@@ -23,7 +23,7 @@ The UI displays chunk text and boundaries, model name, vector dimensions, and th
 
 1. The question is embedded with the same model used for document chunks.
 2. ChromaDB returns up to five nearest passages and cosine distances.
-3. The generator labels those passages `S1`, `S2`, etc. and sends the question and evidence to the configured Groq-hosted LLM.
+3. The generator labels those passages `S1`, `S2`, etc. and sends the question and evidence to the configured Groq-hosted `openai/gpt-oss-20b` LLM.
 4. The LLM is instructed to use only the evidence, return JSON, answer concisely and provide source IDs. The application discards invalid citation IDs and does not mark an answer supported unless the model claims support and cites at least one valid ID.
 5. The UI displays the answer, cited/uncited retrieved passages, source pages, distances, prompt/context, and provider token usage when available.
 
