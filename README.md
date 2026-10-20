@@ -9,11 +9,11 @@ This is a portfolio system, not financial advice software. It does not execute t
 - Bounded PDF upload and page-level extraction with stable, deterministic chunk IDs.
 - Safe re-indexing: new chunks are embedded/upserted before stale chunks for the same source are removed.
 - ChromaDB retrieval with local sentence-transformer embeddings.
-- Grounded LLM answers with an explicit provider-error and unsupported-answer path.
+- Grounded LLM answers with Pydantic-validated JSON and conservative repair for common formatting errors (fences, trailing commas, and a JSON object prefixed by text); malformed or incomplete responses still fail closed.
 - Validation for actual PNG/JPEG data URL bytes, declared image type, and size.
 - Owner-token-gated PDF ingestion to prevent arbitrary visitors from contaminating the shared document index.
 - A process-local shared provider request cap when a Groq key is configured.
-- SQLite interaction logging with WAL and a writer wait timeout.
+- SQLite interaction logging with WAL and a writer wait timeout; records question/answer, request latency, and structured PDF extraction outcomes, with a backward-compatible schema migration and bounded retention.
 - FastAPI and Streamlit interfaces plus client-side load reports and process-local metrics.
 
 ## Architecture
