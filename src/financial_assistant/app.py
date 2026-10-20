@@ -358,7 +358,7 @@ with image_tab:
             image_result.get("prompt_tokens"), image_result.get("completion_tokens")
         )
         if vision_usage_cost is not None:
-            st.metric("Estimated vision API cost for this call", f"\${vision_usage_cost:.8f} USD")
+            st.metric("Estimated vision API cost for this call", f"${vision_usage_cost:.8f} USD")
             st.caption(
                 "Calculated from provider-reported input/output tokens and default Qwen3.6-27B rates "
                 "($0.60/M input, $3.00/M output). Published-rate estimate, not an invoice."
@@ -425,7 +425,7 @@ with image_tab:
             vision_input_for_estimate = (
                 image_result.get("prompt_tokens")
                 if image_result.get("prompt_tokens") is not None
-                else GROQ_QWEN_IMAGE_INPUT_TOKENS + round(len(image_result["question"].split()) * 1.33)
+                else GROQ_QWEN_IMAGE_INPUT_TOKENS + 100 + round(len(image_result["question"].split()) * 1.33)
             )
             vision_output_for_estimate = (
                 image_result.get("completion_tokens")
@@ -443,8 +443,8 @@ with image_tab:
                 prompt_overhead_tokens=int(prompt_overhead),
             )
             compare_a, compare_b = st.columns(2)
-            compare_a.metric("Direct vision estimate", f"\${vision_estimate:.8f} USD")
-            compare_b.metric("OCR + text LLM estimate", f"\${ocr_estimate:.8f} USD")
+            compare_a.metric("Direct vision estimate", f"${vision_estimate:.8f} USD")
+            compare_b.metric("OCR + text LLM estimate", f"${ocr_estimate:.8f} USD")
             if ocr_estimate < vision_estimate:
                 st.success(
                     f"Under these assumptions, OCR + text LLM is about "
