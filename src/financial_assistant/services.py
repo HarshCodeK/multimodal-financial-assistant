@@ -176,7 +176,7 @@ def answer_image_question(question: str, ocr_text: str) -> dict:
 
     return {
         "supported": True,
-        "answer": "Relevant text recognized in the image (extractive match, not a verified calculation):\\n" + "\\n".join(evidence),
+        "answer": "Relevant text recognized in the image (extractive match, not a verified calculation):\n" + "\n".join(evidence),
         "evidence": evidence,
     }
 
