@@ -5,7 +5,8 @@ from collections import defaultdict
 from pathlib import Path
 from time import perf_counter
 
-from .costing import DEFAULT_TEXT_RATES, token_cost_usd\nfrom .extract import CHUNK_OVERLAP_WORDS, CHUNK_WORDS, extract_pdf_bytes
+from .costing import DEFAULT_TEXT_RATES, token_cost_usd
+from .extract import CHUNK_OVERLAP_WORDS, CHUNK_WORDS, extract_pdf_bytes
 from .generation import GroundedAnswerGenerator
 from .models import Answer
 from .retrieval import ChromaRetriever, SentenceTransformerEmbedder
