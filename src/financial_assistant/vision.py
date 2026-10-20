@@ -7,7 +7,9 @@ import base64
 import os
 from pathlib import Path
 
-from .diagnostics import normalize_api_key\n\nMAX_IMAGE_BYTES = 5 * 1024 * 1024
+from .diagnostics import normalize_api_key
+
+MAX_IMAGE_BYTES = 5 * 1024 * 1024
 
 
 def _detect_image_mime(raw: bytes) -> str:
