@@ -1,16 +1,31 @@
 """Streamlit UI for PDF RAG exploration and separate image question answering."""
 
+import json
+import os
 import sys
+from time import perf_counter
 from pathlib import Path
 
 import streamlit as st
 from dotenv import load_dotenv
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+GROQ_KEY_WAS_SET_BEFORE_DOTENV = bool(os.environ.get("GROQ_API_KEY"))
 load_dotenv(PROJECT_ROOT / ".env")
 SRC = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SRC))
 
+from financial_assistant.costing import (
+    DEFAULT_TEXT_RATES,
+    DEFAULT_VISION_RATES,
+    GOOGLE_VISION_OCR_USD_PER_IMAGE,
+    GROQ_QWEN_IMAGE_INPUT_TOKENS,
+    TokenRates,
+    estimate_ocr_then_text_cost_usd,
+    estimate_vision_cost_usd,
+    token_cost_usd,
+)
+from financial_assistant.diagnostics import friendly_groq_error, groq_key_diagnostics
 from financial_assistant.services import create_default_assistant
 from financial_assistant.vision import answer_image_question
 
@@ -20,6 +35,24 @@ st.caption(
     "Explore text-based PDF RAG, or ask a separate vision model about an uploaded image. "
     "The two workflows are intentionally separate."
 )
+
+key_status = groq_key_diagnostics(PROJECT_ROOT, GROQ_KEY_WAS_SET_BEFORE_DOTENV)
+with st.expander("Groq API configuration & troubleshooting", expanded=False):
+    st.write(f"Project .env file found: {'yes' if key_status['env_file_exists'] else 'no'}")
+    st.write(f"Key configured: {'yes' if key_status['configured'] else 'no'}")
+    st.write(f"Effective key source: {key_status['source']}")
+    st.write(f"Key length: {key_status['key_length'] or 'not configured'} characters (the key itself is never displayed)")
+    if key_status["has_outer_whitespace"]:
+        st.warning("The environment-variable key has surrounding whitespace. The app trims it before use.")
+    if not key_status["configured"]:
+        st.warning(
+            f"Expected key location: {PROJECT_ROOT / '.env'}. Add GROQ_API_KEY=your_actual_key_here, "
+            "save, and restart Streamlit. .env.example is only a template."
+        )
+    st.caption(
+        "A configured key is not necessarily valid. If Groq returns HTTP 401, check for an old Windows/user/system "
+        "GROQ_API_KEY variable (it overrides .env), recreate the key in Groq Console if needed, and restart the app."
+    )
 
 
 @st.cache_resource(show_spinner=False)
@@ -38,7 +71,7 @@ def submit_question():
         st.session_state["question_input"] = ""
         st.session_state.pop("question_error", None)
     except Exception as exc:
-        st.session_state["question_error"] = str(exc)
+        st.session_state["question_error"] = friendly_groq_error(exc, "PDF answer")
 
 
 with st.sidebar:
@@ -138,6 +171,15 @@ with pdf_tab:
                 page = f" · page {chunk['page']}" if chunk["page"] else ""
                 st.markdown(f"**Chunk {chunk['number']}{page} — {chunk['words']} words**")
                 st.code(chunk["text"], language="text")
+        with st.expander("What do document tokens and 384 vector dimensions mean?"):
+            st.markdown(
+                "**Approx. document tokens** estimates full-document text size using words × 1.33. It is not an "
+                "exact tokenizer count, and it is not the number sent on every question. RAG retrieves only a few "
+                "passages, which can reduce repeated input context.\n\n"
+                "**Vector dimensions = 384** means each chunk is represented by 384 numeric values. ChromaDB "
+                "compares these vectors to find semantically similar text. They are not 384 words or a confidence "
+                "score. Every chunk and query must use compatible vectors from the same embedding model."
+            )
         with st.expander("Inspect the embedding vector"):
             st.write(
                 "The pretrained embedding model turns a chunk into a fixed-length numeric vector. "
@@ -171,8 +213,15 @@ with pdf_tab:
                 stats.append(f"actual output tokens: {result.completion_tokens}")
             if result.context_token_estimate:
                 stats.append(f"retrieved-context estimate: ~{result.context_token_estimate} tokens")
+            if result.prompt_tokens is not None and result.completion_tokens is not None:
+                estimated_usd = token_cost_usd(result.prompt_tokens, result.completion_tokens, DEFAULT_TEXT_RATES)
+                stats.append(f"estimated API cost: ${estimated_usd:.8f} USD")
             if stats:
                 st.caption(" · ".join(stats))
+                st.caption(
+                    "Cost uses the default GPT-OSS-20B published rates ($0.075/M input, $0.30/M output); "
+                    "it is an estimate, not an invoice or account-credit balance."
+                )
 
             with st.expander("Inspect retrieved passages and similarity distances"):
                 if not result.sources:
@@ -193,7 +242,7 @@ with pdf_tab:
 
     if st.session_state.get("question_error"):
         st.error(st.session_state["question_error"])
-        st.caption("If the error says GROQ_API_KEY is missing, copy .env.example to .env and add your Groq API key.")
+        st.caption("Open the Groq API configuration & troubleshooting panel above. API keys are never printed in the UI.")
 
     with st.form("question_form", clear_on_submit=True):
         st.text_input(
