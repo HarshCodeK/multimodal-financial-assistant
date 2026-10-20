@@ -67,7 +67,7 @@ with st.sidebar:
     st.markdown(
         "- **PyMuPDF:** extracts selectable text and page numbers.\n"
         "- **Chunking:** 80-word chunks with 16-word overlap.\n"
-        "- **Sentence Transformers:** maps each chunk to a 384-dimensional vector.\n"
+        "- **Sentence Transformers:** maps each chunk to a fixed-length vector (384 dimensions with the default model).\n"
         "- **ChromaDB:** stores vectors, text and source metadata.\n"
         "- **Retriever:** selects the closest passages for each question.\n"
         "- **LLM:** answers from those passages and cites source IDs."
