@@ -40,10 +40,10 @@ def chunk_text(text: str, *, source: str, source_type: SourceType, page: int | N
 def _get_ocr_engine():
     """Load the OCR model once, only when OCR is first requested."""
     try:
-        from rapidocr_onnxruntime import RapidOCR
+        from rapidocr import RapidOCR
     except ImportError as exc:
         raise RuntimeError(
-            "Local OCR is not installed. Run: python -m pip install rapidocr-onnxruntime"
+            "Local OCR is not installed. Run: python -m pip install rapidocr onnxruntime"
         ) from exc
     return RapidOCR()
 
@@ -52,10 +52,15 @@ def _ocr_image(image: Image.Image) -> str:
     """Run local OCR. The OCR engine is imported only when needed."""
     import numpy as np
 
-    result, _ = _get_ocr_engine()(np.asarray(image.convert("RGB")))
-    if not result:
-        return ""
-    return " ".join(str(line[1]).strip() for line in result if len(line) > 1 and str(line[1]).strip())
+    result = _get_ocr_engine()(np.asarray(image.convert("RGB")))
+    recognized = getattr(result, "txts", None)
+    if recognized is None:
+        # Compatibility fallback for older RapidOCR result formats.
+        if isinstance(result, tuple) and result:
+            recognized = [line[1] for line in (result[0] or []) if len(line) > 1]
+        else:
+            recognized = []
+    return " ".join(str(line).strip() for line in recognized if str(line).strip())
 
 
 def extract_pdf(path: str | Path) -> list[DocumentChunk]:
