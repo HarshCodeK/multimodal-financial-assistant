@@ -35,6 +35,10 @@ with policy_tab:
             file_name="sample_financial_policy.pdf",
             mime="application/pdf",
         )
+        st.caption(
+            "This compact PDF may produce one chunk. The built-in sample_policy.txt is longer and is indexed "
+            "automatically as multiple overlapping chunks, so you can test retrieval even before uploading a PDF."
+        )
 
     policy_pdf = st.file_uploader(
         "Upload a financial policy PDF",
@@ -92,6 +96,7 @@ with receipt_tab:
         if st.session_state.get("ocr_image_digest") != image_digest:
             st.session_state["ocr_image_digest"] = image_digest
             st.session_state["ocr_text"] = ""
+            st.session_state["image_question"] = ""
         st.image(image, caption="Selected image", use_container_width=True)
 
         if st.button("Read image text", key="read_image"):
