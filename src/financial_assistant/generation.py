@@ -77,7 +77,7 @@ class GroundedAnswerGenerator:
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0,
-            max_tokens=400,
+            max_completion_tokens=400,
             response_format={"type": "json_object"},
         )
         raw_content = response.choices[0].message.content or "{}"
@@ -98,10 +98,10 @@ class GroundedAnswerGenerator:
             supported = False
             answer_text = "I couldn't produce a grounded answer from the retrieved passages."
         if not supported:
+            # Never surface an ungrounded model draft as the fallback answer.
             answer_text = (
-                answer_text.strip()
-                if isinstance(answer_text, str) and answer_text.strip()
-                else "The indexed passages do not provide enough evidence to answer this question."
+                "The retrieved passages do not provide enough evidence to answer this question; "
+                "the document may not specify it."
             )
             valid_ids = []
 
