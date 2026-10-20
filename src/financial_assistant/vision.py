@@ -8,11 +8,6 @@ import os
 from pathlib import Path
 
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
-SUPPORTED_IMAGE_TYPES = {
-    "png": ("image/png", b"\x89PNG\r\n\x1a\n"),
-    "jpg": ("image/jpeg", b"\xff\xd8\xff"),
-    "jpeg": ("image/jpeg", b"\xff\xd8\xff"),
-}
 
 
 def _detect_image_mime(raw: bytes) -> str:
