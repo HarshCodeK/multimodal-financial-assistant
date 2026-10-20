@@ -1,22 +1,39 @@
-"""Small local services: OCR, overlapping text chunks, embeddings, and evidence retrieval."""
+"""Coordinate PDF extraction, chunk indexing, semantic retrieval, and grounded answers."""
 
 import os
-import re
+from collections import defaultdict
 from pathlib import Path
 from time import perf_counter
 
-from .extract import extract_pdf_bytes, image_bytes_to_text
+from .extract import CHUNK_OVERLAP_WORDS, CHUNK_WORDS, extract_pdf_bytes
+from .generation import GroundedAnswerGenerator
 from .models import Answer
 from .retrieval import ChromaRetriever, SentenceTransformerEmbedder
 from .store import InteractionStore
 
 
-class FinancialAssistant:
-    """Coordinates local document indexing, retrieval, and SQLite logging."""
+def _estimate_original_word_count(chunks) -> int:
+    """Estimate document words from per-page overlapping chunks, removing expected overlap."""
+    by_page = defaultdict(list)
+    for chunk in chunks:
+        by_page[chunk.page].append(chunk)
+    total = 0
+    for page_chunks in by_page.values():
+        observed = sum(len(chunk.text.split()) for chunk in page_chunks)
+        total += max(0, observed - CHUNK_OVERLAP_WORDS * max(0, len(page_chunks) - 1))
+    return total
 
-    def __init__(self, retriever, store):
+
+class FinancialAssistant:
+    """Single-document RAG service. A successful index operation replaces the previous PDF."""
+
+    def __init__(self, retriever, store, generator=None):
         self.retriever = retriever
         self.store = store
+        self.generator = generator
+
+    def indexed_sources(self) -> list[str]:
+        return self.retriever.indexed_sources()
 
     def index_pdf(self, filename: str, raw: bytes) -> dict:
         started = perf_counter()
@@ -24,22 +41,54 @@ class FinancialAssistant:
         chunks = extract_pdf_bytes(raw, source_name=safe_name)
         if not chunks:
             raise ValueError(
-                "No readable text was found. If this is a scanned PDF, check that RapidOCR installed correctly."
+                "No selectable text was found in this PDF. This simple version does not run OCR; "
+                "use a text-based PDF or OCR it before uploading."
             )
-        self.retriever.upsert(chunks)
+
+        # Embed first and replace the old collection only after extraction and embedding succeed.
+        self.retriever.replace_all(chunks)
         pages = len({chunk.page for chunk in chunks if chunk.page is not None})
+        total_words = _estimate_original_word_count(chunks)
+        embedder = getattr(self.retriever, "embedder", None)
+        model_name = getattr(embedder, "model_name", os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2"))
+        dimensions = getattr(embedder, "dimensions", None)
+        vector_preview = []
+        if embedder is not None:
+            vector = embedder.embed([chunks[0].text])[0]
+            dimensions = dimensions or len(vector)
+            vector_preview = [round(float(value), 6) for value in vector[:8]]
+
+        chunk_details = [
+            {
+                "number": index,
+                "page": chunk.page,
+                "words": len(chunk.text.split()),
+                "text": chunk.text,
+            }
+            for index, chunk in enumerate(chunks, start=1)
+        ]
         result = {
             "source": safe_name,
             "chunks_indexed": len(chunks),
             "pages_extracted": pages,
             "source_type": "pdf",
+            "chunk_words": CHUNK_WORDS,
+            "chunk_overlap_words": CHUNK_OVERLAP_WORDS,
+            "estimated_document_words": total_words,
+            "estimated_document_tokens": round(total_words * 1.33),
+            "embedding_model": model_name,
+            "embedding_dimensions": dimensions,
+            "embedding_preview": vector_preview,
+            "chunks": chunk_details,
         }
         self.store.record(
-            question=f"PDF extraction: {safe_name}",
+            question=f"PDF extraction and indexing: {safe_name}",
             supported=True,
-            answer=f"Indexed {len(chunks)} overlapping text chunks across {pages} pages.",
+            answer=f"Indexed {len(chunks)} chunks across {pages} pages.",
             latency_ms=round((perf_counter() - started) * 1000, 2),
-            extraction_result=result,
+            extraction_result={
+                key: value for key, value in result.items() if key != "chunks"
+            },
         )
         return result
 
@@ -49,21 +98,21 @@ class FinancialAssistant:
             raise ValueError("Enter a question.")
         started = perf_counter()
         evidence = self.retriever.search(normalized, k=5)
-        # Cosine distance is 0 for identical vectors. Avoid presenting unrelated
-        # nearest-neighbours as evidence when the query is outside the corpus.
-        relevant = [item for item in evidence if item.distance <= 0.75]
-        if relevant:
-            answer_text = "Most relevant passages from your indexed documents:\n\n" + "\n\n".join(
-                f"[{item.source}" + (f", page {item.page}" if item.page else "") + f"]\n{item.text}"
-                for item in relevant[:3]
-            )
-            result = Answer(supported=True, answer=answer_text, sources=relevant)
-        else:
-            result = Answer(
-                supported=False,
-                answer="I couldn't find a sufficiently close passage in the indexed documents. Try a more specific question or index the relevant policy first.",
-                sources=[],
-            )
+        if self.generator is None:
+            self.generator = GroundedAnswerGenerator()
+        generated = self.generator.answer(normalized, evidence)
+        result = Answer(
+            supported=generated["supported"],
+            answer=generated["answer"],
+            sources=generated.get("sources", evidence),
+            citations=generated.get("citations", []),
+            model=generated.get("model"),
+            prompt_tokens=generated.get("prompt_tokens"),
+            completion_tokens=generated.get("completion_tokens"),
+            context_word_count=generated.get("context_word_count", 0),
+            context_token_estimate=generated.get("context_token_estimate", 0),
+            prompt_preview=generated.get("prompt_preview", ""),
+        )
         self.store.record(
             normalized,
             result.supported,
@@ -72,117 +121,9 @@ class FinancialAssistant:
         )
         return result
 
-    def inspect_image(self, raw: bytes, question: str = "") -> str:
-        """Compatibility helper: OCR an image and optionally answer from its text."""
-        started = perf_counter()
-        extracted = image_bytes_to_text(raw)
-        if question.strip() and extracted:
-            result = answer_image_question(question, extracted)
-            answer = result["answer"]
-        else:
-            answer = extracted or "No readable text was detected. Try a sharper, brighter image with the receipt filling more of the frame."
-        self.store.record(
-            question=question.strip() or "OCR image extraction",
-            supported=bool(extracted),
-            answer=answer,
-            latency_ms=round((perf_counter() - started) * 1000, 2),
-        )
-        return answer
-
-
-def answer_image_question(question: str, ocr_text: str) -> dict:
-    """Select relevant OCR line windows using transparent lexical matching; no LLM is used."""
-    if not isinstance(question, str) or not question.strip():
-        raise ValueError("Enter a question about the image.")
-    if not isinstance(ocr_text, str) or not ocr_text.strip():
-        return {
-            "supported": False,
-            "answer": "No readable text is available. Extract text from the image first.",
-            "evidence": [],
-        }
-
-    stopwords = {
-        "a", "an", "and", "are", "as", "at", "be", "by", "can", "could", "did",
-        "do", "does", "for", "from", "how", "i", "in", "is", "it", "me", "my",
-        "of", "on", "or", "please", "show", "tell", "that", "the", "this", "to",
-        "was", "what", "when", "where", "which", "who", "why", "with", "would",
-        "you", "your", "much", "value",
-    }
-    token_pattern = re.compile(r"[a-zA-Z]{2,}|\d+(?:[.,:/-]\d+)*")
-    aliases = {
-        "price": {"price", "cost", "amount", "total", "inr", "rs", "rupees", "₹"},
-        "cost": {"price", "cost", "amount", "total", "inr", "rs", "rupees", "₹"},
-        "amount": {"price", "cost", "amount", "total", "inr", "rs", "rupees", "₹"},
-        "total": {"price", "cost", "amount", "total", "inr", "rs", "rupees", "₹"},
-        "robotics": {"robotics", "robot", "kit"},
-        "kit": {"kit", "product", "item"},
-        "product": {"product", "item", "kit"},
-        "item": {"product", "item", "kit"},
-        "date": {"date", "dated", "day"},
-        "merchant": {"merchant", "store", "seller", "shop"},
-    }
-
-    def terms(value: str) -> set[str]:
-        found = {
-            token.lower().strip(".,:/-")
-            for token in token_pattern.findall(value)
-            if token.lower() not in stopwords
-        }
-        expanded = set(found)
-        for token in found:
-            expanded.update(aliases.get(token, set()))
-        return expanded
-
-    query_terms = terms(question)
-    # For generic price questions, avoid requiring a literal word such as "price"
-    # to appear on the receipt; the product name and adjacent amount line may be enough.
-    if not query_terms:
-        return {"supported": False, "answer": "Please ask a more specific question.", "evidence": []}
-
-    lines = [line.strip() for line in re.split(r"[\r\n]+|(?<=[.!?])\s+", ocr_text) if line.strip()]
-    candidates = []
-    # Receipt OCR often puts an item name and its price on adjacent lines.
-    # Score windows of up to three lines so a product line can be paired with its amount.
-    for index in range(len(lines)):
-        for width in (1, 2, 3):
-            window = lines[index:index + width]
-            if not window:
-                continue
-            combined = " | ".join(window)
-            line_terms = terms(combined)
-            overlap = query_terms & line_terms
-            if overlap:
-                score = len(overlap) / len(query_terms)
-                candidates.append((score, len(overlap), combined))
-
-    # De-duplicate repeated windows while preserving the strongest first.
-    candidates.sort(key=lambda item: (item[0], item[1], len(item[2])), reverse=True)
-    evidence = []
-    seen = set()
-    for score, _, passage in candidates:
-        if score < 0.20 or passage in seen:
-            continue
-        seen.add(passage)
-        evidence.append(passage)
-        if len(evidence) == 3:
-            break
-
-    if not evidence:
-        return {
-            "supported": False,
-            "answer": "I couldn't find text in this image that clearly answers that question. Review the recognized OCR text; the image may be blurry or the item and price may have been read incorrectly.",
-            "evidence": [],
-        }
-
-    return {
-        "supported": True,
-        "answer": "Relevant text recognized in the image (extractive match, not a verified calculation):\n" + "\n".join(evidence),
-        "evidence": evidence,
-    }
-
 
 def create_default_assistant(project_root: str | Path | None = None) -> FinancialAssistant:
-    """Create local services. Called lazily when the user first indexes or asks."""
+    """Create local extraction/retrieval services; load the LLM only when a question is asked."""
     root = Path(project_root) if project_root else Path(__file__).resolve().parents[2]
     chroma_dir = os.getenv("CHROMA_DIR", str(root / ".chroma"))
     sqlite_path = os.getenv("SQLITE_PATH", str(root / "data" / "interactions.db"))
@@ -190,25 +131,8 @@ def create_default_assistant(project_root: str | Path | None = None) -> Financia
     retriever = ChromaRetriever(
         chroma_dir,
         embedder,
-        collection_name="financial_assistant_uploaded_docs_v3",
+        collection_name="financial_assistant_pdf_rag_v4",
     )
     store = InteractionStore(sqlite_path)
-    # Deliberately do not index bundled sample text. Only PDFs explicitly uploaded by the user enter this collection.
+    # No bundled data is indexed. The collection changes only when the user explicitly indexes a PDF.
     return FinancialAssistant(retriever, store)
-
-
-
-def read_image_text(raw: bytes, project_root: str | Path | None = None) -> str:
-    """OCR an image without loading the embedding model and log the result."""
-    root = Path(project_root) if project_root else Path(__file__).resolve().parents[2]
-    store = InteractionStore(os.getenv("SQLITE_PATH", str(root / "data" / "interactions.db")))
-    started = perf_counter()
-    text = image_bytes_to_text(raw)
-    answer = text or "No readable text was detected."
-    store.record(
-        question="OCR image extraction",
-        supported=bool(text),
-        answer=answer,
-        latency_ms=round((perf_counter() - started) * 1000, 2),
-    )
-    return text
