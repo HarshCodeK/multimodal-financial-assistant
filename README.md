@@ -33,12 +33,12 @@ The app itself should open without loading the embedding model. The first time y
 
 1. Click **Download sample financial policy PDF**.
 2. Upload the PDF and click **Index PDF**.
-3. Ask `What is the maximum daily meal reimbursement?` and then ask another question; previous questions and evidence remain visible.
+3. Ask `What is the maximum daily meal reimbursement?` in the question box below the conversation; submit further questions there. Previous questions and evidence remain visible.
 4. Inspect the displayed source passages and page numbers.
 5. Open **Receipt image · Q&A**, upload a receipt image, and click **Read image text**.
-6. Ask `What is the price of the Robotics Kit?` or `What is the total amount?`; previous questions remain visible while the same image is selected.
+6. Review and correct any OCR mistakes in the editable recognized-text box, then ask `What is the total amount?` in the question box below the conversation. Previous questions remain visible while the same image is selected.
 
-The bundled `data/sample_policy.txt` is indexed automatically when the local assistant initializes. It is intentionally longer than the compact downloadable PDF and should produce multiple overlapping chunks with the current 80-word / 16-word-overlap settings. The downloadable PDF may produce one chunk; that is expected for a short document, not evidence that chunking is broken.
+Only PDFs explicitly uploaded and indexed in the app are added to the policy retrieval collection. The repository's `data/sample_policy.txt` is not indexed or used as hidden evidence. Downloading the sample PDF also does not index it: upload the PDF and click **Index uploaded PDF** first. Short PDFs can legitimately produce one chunk; longer PDFs produce multiple 80-word chunks with 16-word overlap. The app uses a fresh collection name to avoid mixing in records from earlier versions that automatically indexed bundled sample text.
 
 ## How it works
 
@@ -62,7 +62,7 @@ Interaction metadata → SQLite
 ## Limitations
 
 - Policy Q&A is semantic retrieval, not LLM generation: it returns relevant source passages, not a synthesized answer.
-- Receipt Q&A uses lexical matching over OCR line windows and common price/amount synonyms. It can still miss paraphrases or depend on OCR accuracy; treat matches as evidence to verify, not verified financial data.
+- Receipt Q&A uses lexical matching over OCR line windows and common price/amount synonyms. It can still miss paraphrases or depend on OCR accuracy; treat matches as evidence to verify, not verified financial data. The OCR text is editable so users can correct misread digits before asking questions.
 - OCR can confuse similar characters and numbers. Verify financial figures against the original.
 - The embedding model and OCR runtime may need downloads on first use. If model downloads fail, the app shows an error when the relevant feature is used.
 - This is a local single-user demo, not a production financial product or financial advice.
