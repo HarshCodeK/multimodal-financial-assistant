@@ -16,13 +16,13 @@ Run `python -m streamlit run src/financial_assistant/app.py`. The Streamlit UI c
 4. Sentence Transformers embeds the chunks locally.
 5. ChromaDB persists vectors and source/page metadata.
 6. A question is embedded and the closest chunks are retrieved.
-7. The app displays the retrieved passages and their source/page rather than inventing a generated answer.
+7. The app displays retrieved passages, source/page metadata, and cosine distance. This is retrieval with extractive evidence display—not free-form LLM generation.
 
 The embedding model is initialized only after the user first indexes a PDF or asks a question, so the UI can render without waiting for model loading.
 
 ## Image OCR
 
-Uploaded images are validated with Pillow and passed to RapidOCR locally. The recognized text is displayed to the user. No image is sent to a remote vision API. OCR is text recognition, not general visual reasoning; verify totals and dates.
+Uploaded images are validated with Pillow and passed to RapidOCR locally. Recognized text lines are preserved and displayed. The user can then ask a question; a small lexical matcher ranks lines by overlap with question terms and displays the matching OCR lines as evidence. It abstains when there is no meaningful overlap. This is deliberately transparent extractive matching, not an LLM and not semantic retrieval. No image is sent to a remote vision API. OCR is text recognition, not general visual reasoning; verify totals and dates.
 
 ## Persistence
 
