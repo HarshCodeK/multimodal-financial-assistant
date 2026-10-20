@@ -78,7 +78,23 @@ class GroundedAnswerGenerator:
             ],
             temperature=0,
             max_completion_tokens=400,
-            response_format={"type": "json_object"},
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "grounded_answer",
+                    "strict": True,
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "supported": {"type": "boolean"},
+                            "answer": {"type": "string"},
+                            "citations": {"type": "array", "items": {"type": "string"}},
+                        },
+                        "required": ["supported", "answer", "citations"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
         )
         raw_content = response.choices[0].message.content or "{}"
         try:
