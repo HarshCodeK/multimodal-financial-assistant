@@ -208,10 +208,30 @@ with pdf_tab:
         with st.chat_message("user"):
             st.write(entry["question"])
         with st.chat_message("assistant"):
+            st.markdown("**Retrieved passages selected for this question**")
+            st.caption(
+                "These are the exact chunks retrieved from the indexed PDF and supplied to the LLM as evidence. "
+                "Review them first; the answer below must be grounded in this evidence."
+            )
+            if not result.sources:
+                st.info("No passages were retrieved, so no document-grounded answer can be generated.")
+            for index, source in enumerate(result.sources, start=1):
+                source_id = f"S{index}"
+                cited = source_id in result.citations
+                label = f"[{source_id}] {Path(source.source).name}"
+                if source.page:
+                    label += f" · page {source.page}"
+                label += " · cited by answer" if cited else " · retrieved"
+                st.markdown(f"**{label}**")
+                st.write(source.text)
+                st.caption(f"ChromaDB cosine distance: {source.distance:.4f} (lower ranks as closer)")
+
+            st.divider()
+            st.markdown("**LLM answer based on the passages above**")
             if result.supported:
                 st.markdown(result.answer)
                 if result.citations:
-                    st.caption("Cited evidence: " + ", ".join(f"[{item}]" for item in result.citations))
+                    st.caption("Answer citations: " + ", ".join(f"[{item}]" for item in result.citations))
             else:
                 st.warning(result.answer)
 
@@ -234,19 +254,6 @@ with pdf_tab:
                     "it is an estimate, not an invoice or account-credit balance."
                 )
 
-            with st.expander("Inspect retrieved passages and similarity distances"):
-                if not result.sources:
-                    st.write("No passages were retrieved.")
-                for index, source in enumerate(result.sources, start=1):
-                    source_id = f"S{index}"
-                    cited = source_id in result.citations
-                    label = f"[{source_id}] {Path(source.source).name}"
-                    if source.page:
-                        label += f" · page {source.page}"
-                    label += " · CITED" if cited else " · retrieved, not cited"
-                    st.markdown(f"**{label}**")
-                    st.write(source.text)
-                    st.caption(f"ChromaDB cosine distance: {source.distance:.4f} (lower means closer)")
             if result.prompt_preview:
                 with st.expander("Inspect exact prompt and retrieved context sent for generation"):
                     st.code(result.prompt_preview, language="text")
