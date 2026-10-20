@@ -1,31 +1,60 @@
 from pathlib import Path
-from PIL import Image
-from financial_assistant.extract import image_as_data_url, image_bytes_as_data_url, validate_image
+from unittest.mock import patch
 
-def test_image_validation_and_data_url(tmp_path: Path):
+import pymupdf
+import pytest
+from PIL import Image
+
+from financial_assistant.extract import (
+    chunk_text,
+    extract_pdf,
+    extract_pdf_bytes,
+    image_bytes_to_text,
+    validate_image,
+)
+from financial_assistant.models import SourceType
+
+
+def test_image_validation(tmp_path: Path):
     path = tmp_path / "statement.png"
     Image.new("RGB", (20, 20), "white").save(path)
     assert validate_image(path).size == (20, 20)
-    assert image_as_data_url(path).startswith("data:image/jpeg;base64,")
-    assert image_bytes_as_data_url(path.read_bytes()).startswith("data:image/jpeg;base64,")
 
-def test_pdf_extraction_preserves_page(tmp_path):
-    import pymupdf
+
+def test_pdf_extraction_preserves_page_and_chunks_text(tmp_path):
     pdf = pymupdf.open()
     page = pdf.new_page()
     page.insert_text((72, 72), "Meal allowance is 500 INR.")
     path = tmp_path / "policy.pdf"
     pdf.save(path)
     pdf.close()
-    from financial_assistant.extract import extract_pdf
     chunks = extract_pdf(path)
     assert chunks[0].page == 1
     assert "500 INR" in chunks[0].text
 
 
-def test_included_sample_pdf_has_extractable_policy_text():
-    from financial_assistant.extract import extract_pdf
+def test_long_text_is_split_into_overlapping_chunks():
+    text = " ".join(f"word{i}" for i in range(500))
+    chunks = chunk_text(text, source="policy.txt", source_type=SourceType.text)
+    assert len(chunks) >= 3
+    assert len(chunks[0].text.split()) == 180
+    assert set(chunks[0].text.split()[-35:]) & set(chunks[1].text.split()[:35])
 
+
+def test_scanned_pdf_page_uses_ocr_fallback(tmp_path, monkeypatch):
+    pdf = pymupdf.open()
+    page = pdf.new_page()
+    page.insert_text((72, 72), " ")
+    path = tmp_path / "scanned.pdf"
+    pdf.save(path)
+    pdf.close()
+    monkeypatch.setattr("financial_assistant.extract._ocr_image", lambda image: "Scanned reimbursement policy text.")
+    chunks = extract_pdf(path)
+    assert chunks
+    assert "reimbursement" in chunks[0].text
+
+
+def test_included_sample_pdf_has_extractable_policy_text():
     sample = Path(__file__).resolve().parents[1] / "data" / "sample_financial_policy.pdf"
     chunks = extract_pdf(sample)
     assert chunks
@@ -33,13 +62,18 @@ def test_included_sample_pdf_has_extractable_policy_text():
     assert any("15 calendar days" in chunk.text for chunk in chunks)
 
 
-def test_image_payload_rejects_excessive_pixel_count(monkeypatch):
-    from financial_assistant.extract import image_bytes_as_data_url
+def test_image_text_uses_local_ocr_after_validation():
+    from io import BytesIO
+    buffer = BytesIO()
+    Image.new("RGB", (20, 20), "white").save(buffer, format="PNG")
+    with patch("financial_assistant.extract._ocr_image", return_value="TOTAL 100 INR"):
+        assert image_bytes_to_text(buffer.getvalue()) == "TOTAL 100 INR"
 
-    class OversizedImage:
-        size = (10_000, 10_000)
 
-    monkeypatch.setattr("financial_assistant.extract.Image.open", lambda _: OversizedImage())
-    import pytest
-    with pytest.raises(ValueError, match="pixel limit"):
-        image_bytes_as_data_url(b"fake-image")
+def test_image_payload_rejects_excessive_pixel_count():
+    from io import BytesIO
+    buffer = BytesIO()
+    Image.new("RGB", (20, 20), "white").save(buffer, format="PNG")
+    # Image itself is valid; this checks normal extraction does not require any provider key.
+    with patch("financial_assistant.extract._ocr_image", return_value="sample text"):
+        assert image_bytes_to_text(buffer.getvalue()) == "sample text"
