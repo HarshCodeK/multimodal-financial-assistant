@@ -63,6 +63,7 @@ with policy_tab:
         placeholder="What is the maximum meal reimbursement?",
         key="policy_question",
     )
+    st.caption("Ask another question whenever you like; earlier questions and evidence stay visible below.")
     if st.button("Ask about policy", disabled=not question.strip(), key="ask_policy"):
         try:
             with st.spinner("Embedding your question and searching the local ChromaDB index..."):
@@ -134,6 +135,7 @@ with receipt_tab:
                 placeholder="What is the total amount?",
                 key="image_question",
             )
+            st.caption("Ask multiple questions about the same image; earlier answers stay visible until you change the image.")
             if st.button(
                 "Answer from image text",
                 disabled=not image_question.strip(),
