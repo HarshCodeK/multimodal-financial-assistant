@@ -9,7 +9,8 @@ dependencies = [
   "numpy>=1.26,<3",
   "chromadb>=1,<2",
   "sentence-transformers>=3,<6",
-  "rapidocr-onnxruntime>=1.4,<2",
+  "rapidocr>=3.10,<4",
+  "onnxruntime>=1.18,<2",
   "streamlit>=1.38,<2",
 ]
 
