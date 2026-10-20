@@ -66,6 +66,7 @@ def test_generation_rejects_supported_answer_without_valid_citation():
     assert result["supported"] is False
     assert result["citations"] == []
     assert result["sources"] == evidence
+    assert "not provide enough evidence" in result["answer"]
 
 
 def test_generation_abstains_without_retrieved_passages():
