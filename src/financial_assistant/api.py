@@ -121,6 +121,7 @@ def metrics():
 
 @app.post("/ingest", response_model=IngestResponse)
 async def ingest(file: UploadFile = File(...), x_ingest_token: str = Header(default="")):
+    started = perf_counter()
     configured_token = os.getenv("INGEST_API_TOKEN", "")
     if not configured_token:
         await file.close()
