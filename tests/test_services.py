@@ -92,3 +92,16 @@ def test_image_inspection_uses_local_ocr_and_logs_result():
         answer = assistant.inspect_image(b"fake-image", "Read the receipt total")
     assert "TOTAL INR 892.50" in answer
     assert store.rows[0][3] >= 0
+
+
+def test_standalone_image_ocr_does_not_need_embeddings_and_logs(tmp_path):
+    from financial_assistant.services import read_image_text
+    with patch("financial_assistant.services.image_bytes_to_text", return_value="TOTAL 42 INR"):
+        result = read_image_text(b"fake-image", tmp_path)
+    assert result == "TOTAL 42 INR"
+    import sqlite3
+    with sqlite3.connect(tmp_path / "data" / "interactions.db") as db:
+        row = db.execute("SELECT question, answer, latency_ms FROM interactions").fetchone()
+    assert row[0] == "OCR image extraction"
+    assert row[1] == "TOTAL 42 INR"
+    assert row[2] >= 0
