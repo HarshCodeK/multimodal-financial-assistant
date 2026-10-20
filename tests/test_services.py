@@ -118,7 +118,7 @@ def test_image_question_selects_relevant_receipt_line_and_shows_evidence():
 
     result = answer_image_question(
         "What is the total amount?",
-        "ACME STORE\\nDATE 2026-10-20\\nTOTAL INR 892.50\\nCARD VISA",
+        "ACME STORE\nDATE 2026-10-20\nTOTAL INR 892.50\nCARD VISA",
     )
     assert result["supported"] is True
     assert any("TOTAL INR 892.50" in line for line in result["evidence"])
@@ -130,7 +130,7 @@ def test_image_question_abstains_when_ocr_has_no_matching_evidence():
 
     result = answer_image_question(
         "What is the refund deadline?",
-        "ACME STORE\\nDATE 2026-10-20\\nTOTAL INR 892.50",
+        "ACME STORE\nDATE 2026-10-20\nTOTAL INR 892.50",
     )
     assert result["supported"] is False
     assert result["evidence"] == []
