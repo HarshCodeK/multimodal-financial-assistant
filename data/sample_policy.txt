@@ -1,25 +1,35 @@
 ACME TECHNOLOGIES - FINANCIAL EXPENSE POLICY
 Fictional sample document for software testing only.
 Effective date: 1 October 2026
+Policy owner: Finance Operations
+Version: 1.0
 
 1. MEAL REIMBURSEMENT
-Business meals are reimbursed up to INR 1,200 per employee per day.
+Business meals are reimbursed up to INR 1,200 per employee per day. The claim must identify the business purpose and the people attending when the meal involves a client or external partner. Tips are included within the daily limit and are not an additional allowance. Personal meals during normal commuting are not reimbursable. If a business meal exceeds the limit, the employee must explain the business reason and obtain manager approval before submitting the claim. Approval does not guarantee reimbursement.
 
 2. HOTEL ACCOMMODATION
-Hotel accommodation is reimbursed up to INR 5,000 per night.
+Hotel accommodation is reimbursed up to INR 5,000 per night for approved domestic business travel. The nightly limit excludes taxes only when the invoice itemizes the tax separately; otherwise, the total invoice amount is compared with the limit. Employees should choose a reasonably priced hotel close to the work location. Room upgrades, minibar purchases, movies, spa services, and personal guest charges are not reimbursable. A manager must approve a booking expected to exceed the limit before the reservation is made.
 
 3. CLAIM DEADLINE
-Employees must submit expense claims within 15 calendar days.
+Employees must submit expense claims within 15 calendar days after the transaction or completion of the business trip, whichever is later. The submission date is the date the complete claim is entered into the expense system. If a system outage prevents submission, the employee should notify Finance Operations and retain the evidence of the outage. The sample policy does not define an automatic extension for weekends or public holidays. Late claims may be returned for explanation and are not automatically approved.
 
 4. REQUIRED DOCUMENTATION
-Claims require an itemized receipt, purchase date, amount, business purpose,
-and project or department. Claims above the limit require manager approval.
+Each claim must include an itemized receipt, purchase date, amount and currency, business purpose, and project or department. A payment confirmation without an itemized description may be insufficient. If a receipt is unavailable, the employee must explain why and provide alternative evidence such as an invoice copy or transaction record. Finance may request further documentation before processing. Employees must not alter receipts or submit the same expense more than once.
 
-5. EXCLUSIONS
-Personal purchases and traffic fines are not reimbursable.
+5. APPROVAL AND EXCEPTIONS
+Claims above a stated reimbursement limit require manager approval. Hotel bookings expected to exceed the nightly limit require approval before booking. Meal claims above the daily limit require an explanation and manager approval before submission. The sample policy does not specify a monetary approval threshold for department managers, a separate executive approval level, or a universal approval turnaround time. Employees should not assume that a missing rule is permission to spend; ask Finance Operations for clarification.
 
-6. PROCESSING TIME
-Finance reviews complete claims within 7 business days.
+6. EXCLUSIONS
+Personal purchases, traffic fines, personal entertainment, minibar purchases, spa services, and charges for personal guests are not reimbursable under this fictional policy. Expenses must have a direct business purpose. Splitting one purchase into multiple claims to avoid an approval limit is prohibited. False, duplicated, or intentionally misleading claims may be rejected and referred for review.
 
-International travel allowance is not specified in this sample policy.
-This fictional document is not a real company policy or financial advice.
+7. PROCESSING TIME
+Finance reviews complete claims within 7 business days. This period begins when the required documents and approvals have been received. Incomplete claims may be returned to the employee, and the review period may restart when the missing information is provided. The policy does not promise that reimbursement will reach the employee's bank account within 7 business days; this is a review target, not a payment guarantee.
+
+8. TRAVEL AND CURRENCY
+The limits in this sample are stated in Indian rupees and apply to the domestic expenses described above. International travel allowance, foreign currency conversion rules, mileage reimbursement, taxi limits, and per diem rules for overseas trips are not specified in this sample policy. Do not infer a limit for an expense category that is not described here. Ask Finance Operations or the approving manager before committing company funds.
+
+9. RECORD KEEPING
+Employees should keep the original receipt and a copy of the submitted claim until reimbursement is complete. Uploaded images should be readable, include the full receipt, and show amounts and dates clearly. OCR output may contain recognition errors; the employee is responsible for checking the figures against the original receipt before relying on them. A system-generated text extraction is not proof that a cost is eligible for reimbursement.
+
+10. POLICY SCOPE AND DISCLAIMER
+This document is a fictional sample for testing document extraction, chunking, semantic retrieval, and source-grounded question answering. It is not an actual ACME Technologies policy and is not financial, tax, accounting, or legal advice. The meal limit is INR 1,200 per employee per day, the hotel limit is INR 5,000 per night for approved domestic travel, claims are due within 15 calendar days, and complete claims are reviewed within 7 business days. International travel allowance is not specified in this sample.
