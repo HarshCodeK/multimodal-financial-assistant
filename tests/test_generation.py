@@ -41,7 +41,8 @@ def test_generation_returns_concise_answer_and_only_valid_citations():
     assert result["sources"] == evidence
     assert result["prompt_tokens"] == 250
     assert "INR 1,200" in result["prompt_preview"]
-    assert completions.kwargs["response_format"] == {"type": "json_object"}
+    assert completions.kwargs["response_format"]["type"] == "json_schema"
+    assert completions.kwargs["response_format"]["json_schema"]["strict"] is True
     assert completions.kwargs["temperature"] == 0
 
 
