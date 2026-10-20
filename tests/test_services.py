@@ -163,3 +163,22 @@ def test_image_question_supports_generic_total_question():
     assert result["supported"] is True
     assert any("Grand Total INR 1,768.82" in line for line in result["evidence"])
 
+
+
+def test_default_assistant_does_not_silently_index_bundled_sample_policy(tmp_path):
+    from financial_assistant import services
+
+    sample = tmp_path / "data" / "sample_policy.txt"
+    sample.parent.mkdir()
+    sample.write_text("Hidden bundled evidence must not be indexed.", encoding="utf-8")
+    fake_retriever = FakeRetriever()
+    fake_store = FakeStore()
+
+    with patch.object(services, "SentenceTransformerEmbedder", return_value=object()), \
+         patch.object(services, "ChromaRetriever", return_value=fake_retriever) as retriever_factory, \
+         patch.object(services, "InteractionStore", return_value=fake_store):
+        services.create_default_assistant(tmp_path)
+
+    retriever_factory.assert_called_once()
+    assert retriever_factory.call_args.kwargs["collection_name"] == "financial_assistant_uploaded_docs_v3"
+    assert fake_retriever.upserted == []
