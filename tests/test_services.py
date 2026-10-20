@@ -33,8 +33,8 @@ class FakeStore:
     def __init__(self):
         self.rows = []
 
-    def record(self, question, supported, answer, latency_ms=None, extraction_result=None):
-        self.rows.append((question, supported, answer, latency_ms, extraction_result))
+    def record(self, question, supported, answer, latency_ms=None, extraction_result=None, **kwargs):
+        self.rows.append((question, supported, answer, latency_ms, extraction_result, kwargs))
 
 
 class FakeGenerator:
@@ -105,6 +105,9 @@ def test_question_uses_llm_and_returns_direct_answer_with_citations():
     assert result.prompt_tokens == 120
     assert result.prompt_preview
     assert store.rows[0][3] >= 0
+    assert store.rows[0][5]["workflow"] == "pdf_rag"
+    assert store.rows[0][5]["prompt_tokens"] == 120
+    assert store.rows[0][5]["estimated_cost_usd"] is not None
 
 
 def test_question_abstains_when_generator_cannot_support_answer():

@@ -61,3 +61,29 @@ def test_interaction_store_migrates_legacy_schema_without_losing_rows(tmp_path):
         ).fetchone()
 
     assert row == ("old question", "old answer", None, None)
+
+
+def test_interaction_store_persists_usage_and_cost_metadata(tmp_path):
+    store = InteractionStore(str(tmp_path / "usage.db"))
+    store.record(
+        "What is the total?",
+        True,
+        "INR 420",
+        latency_ms=95.2,
+        workflow="image_vision",
+        model="qwen/qwen3.6-27b",
+        prompt_tokens=2200,
+        completion_tokens=24,
+        estimated_cost_usd=0.001392,
+        input_chars=18,
+        input_words=4,
+        input_bytes=1024,
+    )
+
+    row = store.recent_usage(1)[0]
+    assert row["workflow"] == "image_vision"
+    assert row["prompt_tokens"] == 2200
+    assert row["completion_tokens"] == 24
+    assert row["estimated_cost_usd"] == 0.001392
+    assert row["input_bytes"] == 1024
+    assert "GROQ_API_KEY" not in row

@@ -5,6 +5,7 @@ from collections import defaultdict
 from pathlib import Path
 from time import perf_counter
 
+from .costing import DEFAULT_TEXT_RATES, token_cost_usd
 from .extract import CHUNK_OVERLAP_WORDS, CHUNK_WORDS, extract_pdf_bytes
 from .generation import GroundedAnswerGenerator
 from .models import Answer
@@ -113,11 +114,24 @@ class FinancialAssistant:
             context_token_estimate=generated.get("context_token_estimate", 0),
             prompt_preview=generated.get("prompt_preview", ""),
         )
+        usage_cost = (
+            token_cost_usd(result.prompt_tokens, result.completion_tokens, DEFAULT_TEXT_RATES)
+            if result.prompt_tokens is not None and result.completion_tokens is not None
+            else None
+        )
+        prompt_length = len(result.prompt_preview)
         self.store.record(
             normalized,
             result.supported,
             result.answer,
             latency_ms=round((perf_counter() - started) * 1000, 2),
+            workflow="pdf_rag",
+            model=result.model,
+            prompt_tokens=result.prompt_tokens,
+            completion_tokens=result.completion_tokens,
+            estimated_cost_usd=usage_cost,
+            input_chars=prompt_length,
+            input_words=len(result.prompt_preview.split()),
         )
         return result
 

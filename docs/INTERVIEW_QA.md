@@ -59,3 +59,24 @@ The vision model is instructed to flag unclear details rather than guess. This i
 ## 15. What are the limitations?
 
 PDF chunks can split sentences; embeddings can miss exact identifiers; top-k retrieval can miss evidence; cosine distance does not prove support; text and vision models can make mistakes; scanned PDFs need external OCR; and image analysis requires network access and a valid Groq API key. This is an educational single-user app, not a production financial system.
+
+
+## 16. How does the app estimate API cost?
+
+It multiplies provider-reported input/output token counts by the configured published price per million tokens. If usage is missing, the app labels the comparison as an estimate. It is not an invoice, balance, or remaining-credit counter. The OCR alternative is a hypothetical calculator, not a live OCR pipeline.
+
+## 17. Why might vision cost differently from OCR + a text LLM?
+
+Direct vision bills the multimodal model for image/text input and generated output. OCR + text LLM adds an OCR service cost and then bills a text model for extracted text, prompt, and answer. The cheaper path depends on image count, OCR provider/free tier, OCR text length, selected model rates, and whether layout/chart context matters. The app exposes these assumptions instead of claiming one path is always cheaper.
+
+## 18. What does “Approx. document tokens” mean?
+
+It estimates full-document token volume from word count multiplied by 1.33. This is a rough size estimate, not actual tokenizer count or the number sent on each RAG question.
+
+## 19. What do 384 embedding dimensions mean?
+
+The embedding model maps each text chunk to 384 numeric coordinates. ChromaDB compares a query vector with stored vectors to find semantically similar chunks. The dimensions are not words, model parameters, or a confidence score.
+
+## 20. Why might a key be present but still receive HTTP 401?
+
+The configured value may be revoked, copied incorrectly, surrounded by accidental characters, or overridden by a stale Windows/user/system environment variable. The app's diagnostics identify the effective source without displaying the secret. A truly invalid key must be replaced in Groq Console; code cannot make a rejected key valid.

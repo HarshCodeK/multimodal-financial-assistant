@@ -1,16 +1,37 @@
 """Streamlit UI for PDF RAG exploration and separate image question answering."""
 
+import json
+import os
 import sys
+from time import perf_counter
 from pathlib import Path
 
 import streamlit as st
 from dotenv import load_dotenv
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+_preexisting_groq_key = os.environ.get("GROQ_API_KEY", "").strip()
+GROQ_KEY_WAS_SET_BEFORE_DOTENV = bool(
+    _preexisting_groq_key and _preexisting_groq_key != "replace_with_your_groq_api_key"
+)
+# Empty/example-placeholder environment variables otherwise prevent python-dotenv from loading a real .env key.
+if not GROQ_KEY_WAS_SET_BEFORE_DOTENV:
+    os.environ.pop("GROQ_API_KEY", None)
 load_dotenv(PROJECT_ROOT / ".env")
 SRC = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SRC))
 
+from financial_assistant.costing import (
+    DEFAULT_TEXT_RATES,
+    DEFAULT_VISION_RATES,
+    GOOGLE_VISION_OCR_USD_PER_IMAGE,
+    GROQ_QWEN_IMAGE_INPUT_TOKENS,
+    TokenRates,
+    estimate_ocr_then_text_cost_usd,
+    estimate_vision_cost_usd,
+    token_cost_usd,
+)
+from financial_assistant.diagnostics import friendly_groq_error, groq_key_diagnostics
 from financial_assistant.services import create_default_assistant
 from financial_assistant.vision import answer_image_question
 
@@ -20,6 +41,24 @@ st.caption(
     "Explore text-based PDF RAG, or ask a separate vision model about an uploaded image. "
     "The two workflows are intentionally separate."
 )
+
+key_status = groq_key_diagnostics(PROJECT_ROOT, GROQ_KEY_WAS_SET_BEFORE_DOTENV)
+with st.expander("Groq API configuration & troubleshooting", expanded=False):
+    st.write(f"Project .env file found: {'yes' if key_status['env_file_exists'] else 'no'}")
+    st.write(f"Key configured: {'yes' if key_status['configured'] else 'no'}")
+    st.write(f"Effective key source: {key_status['source']}")
+    st.write(f"Key length: {key_status['key_length'] or 'not configured'} characters (the key itself is never displayed)")
+    if key_status["has_outer_whitespace"]:
+        st.warning("The environment-variable key has surrounding whitespace. The app trims it before use.")
+    if not key_status["configured"]:
+        st.warning(
+            f"Expected key location: {PROJECT_ROOT / '.env'}. Add GROQ_API_KEY=your_actual_key_here, "
+            "save, and restart Streamlit. .env.example is only a template."
+        )
+    st.caption(
+        "A configured key is not necessarily valid. If Groq returns HTTP 401, check for an old Windows/user/system "
+        "GROQ_API_KEY variable (it overrides .env), recreate the key in Groq Console if needed, and restart the app."
+    )
 
 
 @st.cache_resource(show_spinner=False)
@@ -38,7 +77,7 @@ def submit_question():
         st.session_state["question_input"] = ""
         st.session_state.pop("question_error", None)
     except Exception as exc:
-        st.session_state["question_error"] = str(exc)
+        st.session_state["question_error"] = friendly_groq_error(exc, "PDF answer")
 
 
 with st.sidebar:
@@ -138,6 +177,15 @@ with pdf_tab:
                 page = f" · page {chunk['page']}" if chunk["page"] else ""
                 st.markdown(f"**Chunk {chunk['number']}{page} — {chunk['words']} words**")
                 st.code(chunk["text"], language="text")
+        with st.expander("What do document tokens and 384 vector dimensions mean?"):
+            st.markdown(
+                "**Approx. document tokens** estimates full-document text size using words × 1.33. It is not an "
+                "exact tokenizer count, and it is not the number sent on every question. RAG retrieves only a few "
+                "passages, which can reduce repeated input context.\n\n"
+                "**Vector dimensions = 384** means each chunk is represented by 384 numeric values. ChromaDB "
+                "compares these vectors to find semantically similar text. They are not 384 words or a confidence "
+                "score. Every chunk and query must use compatible vectors from the same embedding model."
+            )
         with st.expander("Inspect the embedding vector"):
             st.write(
                 "The pretrained embedding model turns a chunk into a fixed-length numeric vector. "
@@ -171,8 +219,15 @@ with pdf_tab:
                 stats.append(f"actual output tokens: {result.completion_tokens}")
             if result.context_token_estimate:
                 stats.append(f"retrieved-context estimate: ~{result.context_token_estimate} tokens")
+            if result.prompt_tokens is not None and result.completion_tokens is not None:
+                estimated_usd = token_cost_usd(result.prompt_tokens, result.completion_tokens, DEFAULT_TEXT_RATES)
+                stats.append(f"estimated API cost: ${estimated_usd:.8f} USD")
             if stats:
                 st.caption(" · ".join(stats))
+                st.caption(
+                    "Cost uses the default GPT-OSS-20B published rates ($0.075/M input, $0.30/M output); "
+                    "it is an estimate, not an invoice or account-credit balance."
+                )
 
             with st.expander("Inspect retrieved passages and similarity distances"):
                 if not result.sources:
@@ -193,7 +248,7 @@ with pdf_tab:
 
     if st.session_state.get("question_error"):
         st.error(st.session_state["question_error"])
-        st.caption("If the error says GROQ_API_KEY is missing, copy .env.example to .env and add your Groq API key.")
+        st.caption("Open the Groq API configuration & troubleshooting panel above. API keys are never printed in the UI.")
 
     with st.form("question_form", clear_on_submit=True):
         st.text_input(
@@ -250,19 +305,38 @@ with image_tab:
         )
         if analyze_clicked and uploaded_image is not None:
             try:
+                started = perf_counter()
                 with st.spinner("Sending the image and question to the Groq vision model..."):
                     vision_result = answer_image_question(
                         image_bytes=uploaded_image.getvalue(),
                         filename=uploaded_image.name,
                         question=image_question,
                     )
+                vision_result["latency_ms"] = round((perf_counter() - started) * 1000, 2)
                 st.session_state["last_image_result"] = {
                     "filename": uploaded_image.name,
                     "question": image_question.strip(),
                     **vision_result,
                 }
+                image_cost = estimate_vision_cost_usd(
+                    vision_result.get("prompt_tokens"), vision_result.get("completion_tokens")
+                )
+                get_assistant().store.record(
+                    question=image_question.strip(),
+                    supported=True,
+                    answer=vision_result["answer"],
+                    latency_ms=vision_result["latency_ms"],
+                    workflow="image_vision",
+                    model=vision_result.get("model"),
+                    prompt_tokens=vision_result.get("prompt_tokens"),
+                    completion_tokens=vision_result.get("completion_tokens"),
+                    estimated_cost_usd=image_cost,
+                    input_chars=len(image_question),
+                    input_words=len(image_question.split()),
+                    input_bytes=len(uploaded_image.getvalue()),
+                )
             except Exception as exc:
-                st.error(f"Could not analyze this image: {exc}")
+                st.error(friendly_groq_error(exc, "image analysis"))
 
     image_result = st.session_state.get("last_image_result")
     if image_result:
@@ -285,7 +359,135 @@ with image_tab:
             "financial values against the original image."
         )
 
+        st.subheader("Usage and estimated cost")
+        vision_usage_cost = estimate_vision_cost_usd(
+            image_result.get("prompt_tokens"), image_result.get("completion_tokens")
+        )
+        if vision_usage_cost is not None:
+            st.metric("Estimated vision API cost for this call", f"${vision_usage_cost:.8f} USD")
+            st.caption(
+                "Calculated from provider-reported input/output tokens and default Qwen3.6-27B rates "
+                "($0.60/M input, $3.00/M output). Published-rate estimate, not an invoice."
+            )
+        else:
+            st.info(
+                f"The provider did not return usage. A rough estimate starts at {GROQ_QWEN_IMAGE_INPUT_TOKENS:,} "
+                "image input tokens plus the question and answer; adjust assumptions in the comparison below."
+            )
+
+        with st.expander("Compare direct vision vs OCR + text LLM", expanded=True):
+            st.write(
+                "This is a cost calculator, not a live OCR implementation. Direct vision sends the image to Qwen. "
+                "The alternative assumes cloud OCR extracts text first, then GPT-OSS-20B answers from that text. "
+                "OCR can lose layout, handwriting, chart structure, or visual context."
+            )
+            rate_col1, rate_col2 = st.columns(2)
+            with rate_col1:
+                vision_input_rate = st.number_input(
+                    "Vision input price (USD / 1M tokens)", min_value=0.0,
+                    value=DEFAULT_VISION_RATES.input_per_million, step=0.05, format="%.4f",
+                    key="vision_input_rate",
+                )
+                vision_output_rate = st.number_input(
+                    "Vision output price (USD / 1M tokens)", min_value=0.0,
+                    value=DEFAULT_VISION_RATES.output_per_million, step=0.25, format="%.4f",
+                    key="vision_output_rate",
+                )
+                text_input_rate = st.number_input(
+                    "Text LLM input price (USD / 1M tokens)", min_value=0.0,
+                    value=DEFAULT_TEXT_RATES.input_per_million, step=0.01, format="%.4f",
+                    key="text_input_rate",
+                )
+                text_output_rate = st.number_input(
+                    "Text LLM output price (USD / 1M tokens)", min_value=0.0,
+                    value=DEFAULT_TEXT_RATES.output_per_million, step=0.05, format="%.4f",
+                    key="text_output_rate",
+                )
+            with rate_col2:
+                ocr_price = st.number_input(
+                    "Cloud OCR price per image (USD)", min_value=0.0,
+                    value=GOOGLE_VISION_OCR_USD_PER_IMAGE, step=0.0005, format="%.6f",
+                    key="ocr_price",
+                )
+                ocr_text_tokens = st.number_input(
+                    "Estimated OCR text tokens", min_value=0, max_value=200000, value=300, step=50,
+                    key="ocr_text_tokens",
+                )
+                assumed_output_tokens = st.number_input(
+                    "Assumed answer output tokens", min_value=1, max_value=8000,
+                    value=int(image_result.get("completion_tokens") or 100), step=10,
+                    key="comparison_output_tokens",
+                )
+                prompt_overhead = st.number_input(
+                    "Text LLM instructions/question overhead tokens", min_value=0, max_value=10000,
+                    value=250, step=25, key="comparison_prompt_overhead",
+                )
+                free_ocr_tier = st.checkbox(
+                    "Assume Google Cloud Vision's first 1,000 OCR units/month are still free",
+                    value=False, key="ocr_free_tier",
+                )
+            vision_rates = TokenRates(vision_input_rate, vision_output_rate)
+            text_rates = TokenRates(text_input_rate, text_output_rate)
+            vision_input_for_estimate = (
+                image_result.get("prompt_tokens")
+                if image_result.get("prompt_tokens") is not None
+                else GROQ_QWEN_IMAGE_INPUT_TOKENS + 100 + round(len(image_result["question"].split()) * 1.33)
+            )
+            vision_output_for_estimate = (
+                image_result.get("completion_tokens")
+                if image_result.get("completion_tokens") is not None
+                else int(assumed_output_tokens)
+            )
+            vision_estimate = token_cost_usd(
+                int(vision_input_for_estimate), int(vision_output_for_estimate), vision_rates
+            )
+            ocr_estimate = estimate_ocr_then_text_cost_usd(
+                int(ocr_text_tokens),
+                int(assumed_output_tokens),
+                text_rates=text_rates,
+                ocr_cost_usd=0.0 if free_ocr_tier else ocr_price,
+                prompt_overhead_tokens=int(prompt_overhead),
+            )
+            compare_a, compare_b = st.columns(2)
+            compare_a.metric("Direct vision estimate", f"${vision_estimate:.8f} USD")
+            compare_b.metric("OCR + text LLM estimate", f"${ocr_estimate:.8f} USD")
+            if ocr_estimate < vision_estimate:
+                st.success(
+                    f"Under these assumptions, OCR + text LLM is about "
+                    f"{vision_estimate / max(ocr_estimate, 1e-12):.2f}× cheaper."
+                )
+            elif vision_estimate < ocr_estimate:
+                st.success(
+                    f"Under these assumptions, direct vision is about "
+                    f"{ocr_estimate / max(vision_estimate, 1e-12):.2f}× cheaper."
+                )
+            else:
+                st.info("The two estimates are equal under these assumptions.")
+            st.caption(
+                "Default rates: Groq Qwen3.6-27B $0.60/M input and $3/M output; Groq GPT-OSS-20B "
+                "$0.075/M input and $0.30/M output; Google Cloud Vision OCR $1.50 per 1,000 images after its "
+                "monthly free tier. These are editable published-rate assumptions, not actual billing records. "
+                "Image tokenization and OCR free-tier usage can change the real bill."
+            )
+
 st.caption(
     "PDF RAG and image Q&A are separate workflows: PDF content is indexed for retrieval; images are analyzed directly "
     "per request and are not persisted in ChromaDB."
 )
+
+with st.expander("Local usage and estimated-cost log"):
+    st.caption(
+        "Recent requests are recorded in the local SQLite database. It stores question/answer text, latency, token "
+        "usage, estimated USD cost and input lengths, but never the API key or uploaded image bytes."
+    )
+    usage_rows = get_assistant().store.recent_usage(100)
+    if usage_rows:
+        st.dataframe(usage_rows, use_container_width=True, hide_index=True)
+        st.download_button(
+            "Download usage log as JSON",
+            data=json.dumps(usage_rows, indent=2, ensure_ascii=False),
+            file_name="financial_assistant_usage_log.json",
+            mime="application/json",
+        )
+    else:
+        st.info("No request records yet. Ask a PDF question or analyze an image to create a usage record.")
