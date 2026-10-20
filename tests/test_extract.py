@@ -31,3 +31,15 @@ def test_included_sample_pdf_has_extractable_policy_text():
     assert chunks
     assert any("INR 1,200" in chunk.text for chunk in chunks)
     assert any("15 calendar days" in chunk.text for chunk in chunks)
+
+
+def test_image_payload_rejects_excessive_pixel_count(monkeypatch):
+    from financial_assistant.extract import image_bytes_as_data_url
+
+    class OversizedImage:
+        size = (10_000, 10_000)
+
+    monkeypatch.setattr("financial_assistant.extract.Image.open", lambda _: OversizedImage())
+    import pytest
+    with pytest.raises(ValueError, match="pixel limit"):
+        image_bytes_as_data_url(b"fake-image")
