@@ -146,6 +146,6 @@ def test_default_assistant_does_not_silently_index_bundled_sample_policy(tmp_pat
         assistant = services.create_default_assistant(tmp_path)
 
     retriever_factory.assert_called_once()
-    assert retriever_factory.call_args.kwargs["collection_name"] == "financial_assistant_pdf_rag_v4"
+    assert retriever_factory.call_args.kwargs["collection_name"] == "financial_assistant_pdf_rag_v5"
     assert assistant.indexed_sources() == []
     assert fake_retriever.indexed == []
