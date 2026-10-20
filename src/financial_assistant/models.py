@@ -1,4 +1,4 @@
-"""Small typed records shared by the local extraction and retrieval pipeline."""
+"""Typed records shared by PDF extraction, retrieval, and grounded answer generation."""
 
 from dataclasses import dataclass, field
 from enum import Enum
@@ -6,8 +6,6 @@ from enum import Enum
 
 class SourceType(str, Enum):
     pdf = "pdf"
-    image = "image"
-    text = "text"
 
 
 @dataclass(frozen=True)
@@ -28,3 +26,9 @@ class Answer:
     supported: bool
     answer: str
     sources: list[RetrievedChunk] = field(default_factory=list)
+    citations: list[str] = field(default_factory=list)
+    model: str | None = None
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    context_word_count: int = 0
+    context_token_estimate: int = 0
