@@ -1,6 +1,8 @@
+"""Local PDF/image text extraction with OCR fallback for scanned pages."""
+
 from pathlib import Path
-import base64
 import io
+import re
 
 import pymupdf
 from PIL import Image
@@ -11,7 +13,43 @@ MAX_IMAGE_BYTES = 8 * 1024 * 1024
 MAX_PDF_BYTES = 10 * 1024 * 1024
 MAX_PDF_PAGES = 100
 MAX_TOTAL_EXTRACTED_CHARS = 200_000
-MAX_CHARS_PER_PAGE = 8_000
+MAX_IMAGE_PIXELS = 20_000_000
+CHUNK_WORDS = 180
+CHUNK_OVERLAP_WORDS = 35
+
+
+def chunk_text(text: str, *, source: str, source_type: SourceType, page: int | None = None) -> list[DocumentChunk]:
+    """Split extracted text into overlapping word chunks for semantic retrieval."""
+    words = re.findall(r"\S+", text)
+    if not words:
+        return []
+    chunks = []
+    start = 0
+    while start < len(words):
+        part = " ".join(words[start:start + CHUNK_WORDS]).strip()
+        if part:
+            chunks.append(DocumentChunk(source=source, source_type=source_type, text=part, page=page))
+        if start + CHUNK_WORDS >= len(words):
+            break
+        start += CHUNK_WORDS - CHUNK_OVERLAP_WORDS
+    return chunks
+
+
+def _ocr_image(image: Image.Image) -> str:
+    """Run local OCR. The OCR engine is imported only when needed."""
+    try:
+        from rapidocr_onnxruntime import RapidOCR
+    except ImportError as exc:
+        raise RuntimeError(
+            "Local OCR is not installed. Run: python -m pip install rapidocr-onnxruntime"
+        ) from exc
+    import numpy as np
+
+    engine = RapidOCR()
+    result, _ = engine(np.asarray(image.convert("RGB")))
+    if not result:
+        return ""
+    return " ".join(str(line[1]).strip() for line in result if len(line) > 1 and str(line[1]).strip())
 
 
 def extract_pdf(path: str | Path) -> list[DocumentChunk]:
@@ -25,61 +63,56 @@ def extract_pdf_bytes(raw: bytes, source_name: str) -> list[DocumentChunk]:
     if not raw.startswith(b"%PDF-"):
         raise ValueError("uploaded file is not a valid PDF")
     chunks: list[DocumentChunk] = []
-    remaining_chars = MAX_TOTAL_EXTRACTED_CHARS
+    extracted_total = 0
     try:
         with pymupdf.open(stream=raw, filetype="pdf") as doc:
             if len(doc) > MAX_PDF_PAGES:
                 raise ValueError(f"PDF has more than {MAX_PDF_PAGES} pages")
             for page_number, page in enumerate(doc, start=1):
-                if remaining_chars <= 0:
+                if extracted_total >= MAX_TOTAL_EXTRACTED_CHARS:
                     break
-                text = " ".join(page.get_text("text").split())[:MAX_CHARS_PER_PAGE]
-                text = text[:remaining_chars]
-                if text:
-                    chunks.append(DocumentChunk(source=source_name, source_type=SourceType.pdf, text=text, page=page_number))
-                    remaining_chars -= len(text)
+                text = " ".join(page.get_text("text").split())
+                # A nearly empty text layer usually indicates a scanned page.
+                if len(text) < 25:
+                    pixmap = page.get_pixmap(matrix=pymupdf.Matrix(1.5, 1.5), alpha=False)
+                    image = Image.open(io.BytesIO(pixmap.tobytes("png"))).convert("RGB")
+                    text = _ocr_image(image)
+                if not text:
+                    continue
+                remaining = MAX_TOTAL_EXTRACTED_CHARS - extracted_total
+                text = text[:remaining]
+                chunks.extend(chunk_text(text, source=source_name, source_type=SourceType.pdf, page=page_number))
+                extracted_total += len(text)
     except (pymupdf.FileDataError, pymupdf.EmptyFileError) as exc:
         raise ValueError("PDF could not be opened") from exc
     return chunks
 
 
+def image_bytes_to_text(raw: bytes) -> str:
+    if not raw or len(raw) > MAX_IMAGE_BYTES:
+        raise ValueError("image is empty or larger than the 8 MiB limit")
+    try:
+        image = Image.open(io.BytesIO(raw))
+        width, height = image.size
+        if width <= 0 or height <= 0 or width * height > MAX_IMAGE_PIXELS:
+            raise ValueError("image dimensions exceed the supported pixel limit")
+        image.verify()
+        image = Image.open(io.BytesIO(raw)).convert("RGB")
+    except (OSError, Image.DecompressionBombError) as exc:
+        raise ValueError("uploaded file is not a valid supported image") from exc
+    return _ocr_image(image)
+
+
 def validate_image(path: str | Path) -> Image.Image:
     raw = Path(path).read_bytes()
-    if len(raw) > MAX_IMAGE_BYTES:
-        raise ValueError("image is larger than the 8 MiB limit")
-    image = Image.open(io.BytesIO(raw))
-    width, height = image.size
-    if width <= 0 or height <= 0 or width * height > 20_000_000:
-        raise ValueError("image dimensions exceed the supported pixel limit")
-    image.verify()
-    return Image.open(io.BytesIO(raw)).convert("RGB")
-
-
-def image_bytes_as_data_url(raw: bytes) -> str:
-    if len(raw) > MAX_IMAGE_BYTES:
-        raise ValueError("image is larger than the 8 MiB limit")
-    image = Image.open(io.BytesIO(raw))
-    width, height = image.size
-    if width <= 0 or height <= 0 or width * height > 20_000_000:
-        raise ValueError("image dimensions exceed the supported pixel limit")
-    image.verify()
-    image = Image.open(io.BytesIO(raw)).convert("RGB")
-    buffer = io.BytesIO()
-    image.save(buffer, format="JPEG", quality=85)
-    encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
-    return f"data:image/jpeg;base64,{encoded}"
-
-
-def image_as_data_url(path: str | Path) -> str:
-    image = validate_image(path)
-    buffer = io.BytesIO()
-    image.save(buffer, format="JPEG", quality=85)
-    encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
-    return f"data:image/jpeg;base64,{encoded}"
-
-
-def image_description_chunk(path: str | Path, description: str) -> DocumentChunk:
-    text = " ".join(description.split())
-    if not text:
-        raise ValueError("image description cannot be empty")
-    return DocumentChunk(source=str(path), source_type=SourceType.image, text=text)
+    if not raw or len(raw) > MAX_IMAGE_BYTES:
+        raise ValueError("image is empty or larger than the 8 MiB limit")
+    try:
+        image = Image.open(io.BytesIO(raw))
+        width, height = image.size
+        if width <= 0 or height <= 0 or width * height > MAX_IMAGE_PIXELS:
+            raise ValueError("image dimensions exceed the supported pixel limit")
+        image.verify()
+        return Image.open(io.BytesIO(raw)).convert("RGB")
+    except (OSError, Image.DecompressionBombError) as exc:
+        raise ValueError("uploaded file is not a valid supported image") from exc
