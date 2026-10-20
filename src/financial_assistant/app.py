@@ -1,7 +1,11 @@
+import sys
 from pathlib import Path
 import os
 
 import streamlit as st
+
+SRC = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(SRC))
 
 from financial_assistant.services import create_default_assistant
 
