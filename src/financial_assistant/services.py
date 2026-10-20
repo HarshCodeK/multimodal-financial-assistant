@@ -36,6 +36,10 @@ class FinancialAssistant:
     def indexed_sources(self) -> list[str]:
         return self.retriever.indexed_sources()
 
+    def clear_index(self) -> None:
+        """Clear the active PDF index without touching uploaded/original files."""
+        self.retriever.clear_index()
+
     def index_pdf(self, filename: str, raw: bytes) -> dict:
         started = perf_counter()
         safe_name = Path(filename).name
@@ -145,7 +149,7 @@ def create_default_assistant(project_root: str | Path | None = None) -> Financia
     retriever = ChromaRetriever(
         chroma_dir,
         embedder,
-        collection_name="financial_assistant_pdf_rag_v4",
+        collection_name="financial_assistant_pdf_rag_v5",
     )
     store = InteractionStore(sqlite_path)
     # No bundled data is indexed. The collection changes only when the user explicitly indexes a PDF.
