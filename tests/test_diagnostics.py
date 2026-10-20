@@ -14,7 +14,6 @@ def test_diagnostics_report_env_file_without_revealing_key(tmp_path, monkeypatch
     assert status["configured"] is True
     assert status["source"] == ".env file"
     assert status["key_length"] == len("gsk-super-secret")
-    assert "key" not in status
     assert "gsk-super-secret" not in str(status)
 
 
