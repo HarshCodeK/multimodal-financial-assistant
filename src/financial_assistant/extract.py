@@ -61,7 +61,7 @@ def _ocr_image(image: Image.Image) -> str:
         else:
             recognized = []
     # Keep OCR line boundaries so receipt fields remain independently searchable.
-    return "\\n".join(str(line).strip() for line in recognized if str(line).strip())
+    return "\n".join(str(line).strip() for line in recognized if str(line).strip())
 
 
 def extract_pdf(path: str | Path) -> list[DocumentChunk]:
