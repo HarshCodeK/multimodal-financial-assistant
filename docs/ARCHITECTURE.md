@@ -43,9 +43,15 @@ These are practical guardrails, not a mathematical guarantee against hallucinati
 
 The system prompt tells the model not to follow instructions visible inside an image and not to guess unreadable financial values. This is not a guarantee; users must verify dates, amounts, and identifiers against the original.
 
-## Token and cost observability
+## Token, cost and request-length observability
 
-The PDF tab reports provider input/output token counts when returned by Groq. It also shows rough word-based estimates for document and retrieved-context size; these are not tokenizer measurements and are not a measured percentage saving. RAG may reduce repeated context for large documents, but embedding/indexing has overhead and retrieval can miss evidence. Image Q&A sends image plus question directly to the vision model and is not the token-saving RAG path.
+- PDF answers display provider-reported input/output tokens when available and estimate cost using default GPT-OSS-20B rates ($0.075/M input, $0.30/M output).
+- Image answers display provider-reported usage and estimate cost using Qwen3.6-27B rates ($0.60/M input, $3.00/M output). Groq's vision documentation says one image is counted as 2,048 input tokens for this model.
+- The image tab includes an editable estimate comparing direct vision with cloud OCR + GPT-OSS-20B. Default OCR pricing uses Google Cloud Vision's $1.50/1,000 image text-detection rate after the first 1,000 free monthly units. This alternative is a calculator only; no OCR API is called by the app.
+- Recent workflow/model, token counts, estimated USD cost, latency and input lengths are recorded in local SQLite and can be downloaded as JSON. The log stores question/answer text but not API keys or uploaded image bytes.
+- Rates are published defaults, not live billing data. Estimated cost is not account credit balance or invoice; users can edit rates in the UI. If provider usage is missing, the comparison uses labelled assumptions.
+- “Approx. document tokens” is a word-count × 1.33 estimate for full PDF text, not exact tokenization. “384 vector dimensions” means 384 numeric coordinates per chunk/query embedding, not words or confidence.
+- RAG may reduce repeated context for long documents, but embedding/indexing has overhead and retrieval can miss evidence. Image Q&A is not RAG.
 
 ## Data boundaries and persistence
 
