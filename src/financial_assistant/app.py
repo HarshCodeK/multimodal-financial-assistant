@@ -52,7 +52,7 @@ with st.sidebar:
             mime="application/pdf",
             use_container_width=True,
         )
-        st.caption("Downloading the sample does not index it. Upload the PDF below and click the indexing button.")
+        st.caption("Short fictional example. Downloading does not index it; upload it below. Use a longer PDF to see token-context reduction more clearly.")
     uploaded_pdf = st.file_uploader(
         "Upload a text-based PDF",
         type=["pdf"],
