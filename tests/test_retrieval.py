@@ -22,7 +22,7 @@ def chunk(text, page=1, source="p.pdf"):
 
 def test_chroma_round_trip(tmp_path):
     retriever = ChromaRetriever(str(tmp_path), FakeEmbedder(), collection_name="test")
-    retriever.upsert([chunk("Meal allowance is 500 INR.")])
+    retriever.replace_all([chunk("Meal allowance is 500 INR.")])
     results = retriever.search("meal allowance", k=1)
     assert results[0].text.startswith("Meal allowance")
 
