@@ -40,7 +40,7 @@ def groq_key_diagnostics(project_root: str | Path, process_env_preexisting: bool
         "process_env_has_key": bool(process_key),
         "source": source,
         "configured": bool(effective_key) and not looks_placeholder,
-        "has_outer_whitespace": bool(process_key) and os.environ.get("GROQ_API_KEY") != process_key,
+        "has_outer_whitespace": bool(process_key) and os.environ.get("GROQ_API_KEY") != os.environ.get("GROQ_API_KEY", "").strip(),
         "looks_placeholder": looks_placeholder,
         "key_length": len(effective_key) if not looks_placeholder else 0,
     }
@@ -57,6 +57,12 @@ def friendly_groq_error(exc: Exception, workflow: str = "request") -> str:
         or "invalid_api_key" in message
         or "authenticationerror" in type(exc).__name__.lower()
     )
+    if "groq_api_key is missing" in message:
+        return (
+            f"No Groq API key was available for this {workflow}. Put GROQ_API_KEY=your_actual_key_here "
+            "in the project-root .env file (not .env.example), save it, and restart Streamlit. "
+            "The key is never shown by this diagnostic."
+        )
     if is_auth_error:
         return (
             f"Groq rejected the API key for this {workflow} (HTTP 401 / invalid_api_key). "
