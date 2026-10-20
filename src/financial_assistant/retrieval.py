@@ -7,21 +7,27 @@ from .models import DocumentChunk, RetrievedChunk, SourceType
 
 
 class Embedder(Protocol):
+    model_name: str
+
     def embed(self, texts: list[str]) -> list[list[float]]: ...
 
 
 class SentenceTransformerEmbedder:
+    """Create semantic vectors with a pretrained Sentence Transformers model."""
+
     def __init__(self, model_name: str = "all-MiniLM-L6-v2"):
         from sentence_transformers import SentenceTransformer
 
+        self.model_name = model_name
         self.model = SentenceTransformer(model_name)
+        self.dimensions = int(self.model.get_sentence_embedding_dimension())
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         return self.model.encode(texts, normalize_embeddings=True).tolist()
 
 
 class ChromaRetriever:
-    """Chroma-backed retrieval with bounded queries and safer source replacement."""
+    """Chroma-backed semantic retrieval for one explicitly indexed PDF at a time."""
 
     MAX_QUERY_RESULTS = 10
 
@@ -29,13 +35,14 @@ class ChromaRetriever:
         import chromadb
 
         self.client = chromadb.PersistentClient(path=persist_dir)
-        self.collection = self.client.get_or_create_collection(collection_name, metadata={"hnsw:space": "cosine"})
+        self.collection = self.client.get_or_create_collection(
+            collection_name, metadata={"hnsw:space": "cosine"}
+        )
         self.embedder = embedder
         self._write_lock = RLock()
 
     @staticmethod
     def _chunk_id(chunk: DocumentChunk) -> str:
-        # Content-sensitive IDs allow new chunks to be written before old IDs are removed.
         identity = json.dumps(
             [chunk.source_type.value, chunk.source, chunk.page or 0, chunk.text],
             ensure_ascii=False,
@@ -43,11 +50,11 @@ class ChromaRetriever:
         )
         return hashlib.sha256(identity.encode("utf-8")).hexdigest()
 
-    def upsert(self, chunks: list[DocumentChunk]) -> None:
+    def replace_all(self, chunks: list[DocumentChunk]) -> None:
+        """Replace the index with the one PDF the user just explicitly indexed."""
         if not chunks:
-            return
+            raise ValueError("There are no text chunks to index.")
 
-        # Chroma requires unique IDs per batch; identical duplicate chunks are redundant.
         unique = {self._chunk_id(chunk): chunk for chunk in chunks}
         ids = list(unique)
         chunks = list(unique.values())
@@ -55,38 +62,32 @@ class ChromaRetriever:
         if len(embeddings) != len(chunks):
             raise ValueError("embedder returned a different number of vectors than input texts")
 
-        sources = sorted({chunk.source for chunk in chunks})
         metadatas = [
             {"source": chunk.source, "source_type": chunk.source_type.value, "page": chunk.page or 0}
             for chunk in chunks
         ]
 
         with self._write_lock:
-            old_ids_by_source: dict[str, set[str]] = {}
-            for source in sources:
-                existing = self.collection.get(where={"source": source}, include=["metadatas"])
-                old_ids_by_source[source] = set(existing.get("ids", []))
-
-            # Upsert first: if Chroma rejects the write, the previous source is not
-            # deliberately deleted first. This is still not a cross-process transaction.
-            self.collection.upsert(
+            existing = self.collection.get(include=[])
+            old_ids = existing.get("ids", [])
+            if old_ids:
+                self.collection.delete(ids=old_ids)
+            self.collection.add(
                 ids=ids,
                 documents=[chunk.text for chunk in chunks],
                 embeddings=embeddings,
                 metadatas=metadatas,
             )
 
-            new_ids_by_source: dict[str, set[str]] = {}
-            for chunk, chunk_id in zip(chunks, ids):
-                new_ids_by_source.setdefault(chunk.source, set()).add(chunk_id)
+    def indexed_sources(self) -> list[str]:
+        result = self.collection.get(include=["metadatas"])
+        return sorted({
+            str(metadata.get("source", "unknown"))
+            for metadata in (result.get("metadatas") or [])
+            if metadata
+        })
 
-            # Delete stale records only after the replacement write succeeds.
-            for source, old_ids in old_ids_by_source.items():
-                stale_ids = sorted(old_ids - new_ids_by_source.get(source, set()))
-                if stale_ids:
-                    self.collection.delete(ids=stale_ids)
-
-    def search(self, question: str, k: int = 4) -> list[RetrievedChunk]:
+    def search(self, question: str, k: int = 5) -> list[RetrievedChunk]:
         normalized = question.strip() if isinstance(question, str) else ""
         if not normalized:
             raise ValueError("question cannot be empty")
