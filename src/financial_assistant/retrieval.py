@@ -3,7 +3,7 @@ import json
 from threading import RLock
 from typing import Protocol
 
-from .models import DocumentChunk, RetrievedChunk
+from .models import DocumentChunk, RetrievedChunk, SourceType
 
 
 class Embedder(Protocol):
@@ -114,7 +114,7 @@ class ChromaRetriever:
                     text=document,
                     distance=float(distances[index]),
                     source=str(metadata.get("source", "unknown")),
-                    source_type=metadata.get("source_type", "pdf"),
+                    source_type=SourceType(metadata.get("source_type", "pdf")),
                     page=(metadata.get("page") or None),
                 )
             )
