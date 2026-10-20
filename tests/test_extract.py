@@ -21,3 +21,13 @@ def test_pdf_extraction_preserves_page(tmp_path):
     chunks = extract_pdf(path)
     assert chunks[0].page == 1
     assert "500 INR" in chunks[0].text
+
+
+def test_included_sample_pdf_has_extractable_policy_text():
+    from financial_assistant.extract import extract_pdf
+
+    sample = Path(__file__).resolve().parents[1] / "data" / "sample_financial_policy.pdf"
+    chunks = extract_pdf(sample)
+    assert chunks
+    assert any("INR 1,200" in chunk.text for chunk in chunks)
+    assert any("15 calendar days" in chunk.text for chunk in chunks)
