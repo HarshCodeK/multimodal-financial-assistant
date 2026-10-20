@@ -36,7 +36,8 @@ def chunk_text(text: str, *, source: str, source_type: SourceType, page: int | N
     return chunks
 
 
-@lru_cache(maxsize=1)\ndef _get_ocr_engine():
+@lru_cache(maxsize=1)
+def _get_ocr_engine():
     """Load the OCR model once, only when OCR is first requested."""
     try:
         from rapidocr_onnxruntime import RapidOCR
