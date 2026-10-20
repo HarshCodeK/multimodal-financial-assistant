@@ -167,6 +167,7 @@ async def ingest(file: UploadFile = File(...), x_ingest_token: str = Header(defa
 
 @app.post("/ask", response_model=AskResponse)
 def ask(request: AskRequest, response: Response):
+    started = perf_counter()
     try:
         _ensure_dependencies()
         evidence = _retriever.search(request.question)
@@ -181,9 +182,12 @@ def ask(request: AskRequest, response: Response):
 
 @app.post("/describe-image", response_model=ImageResponse)
 def describe_image(request: ImageRequest, response: Response):
+    started = perf_counter()
     try:
         _ensure_dependencies()
         answer = _vision_client.describe_image(request.question, request.image_data_url)
+        if _store is not None:
+            _store.record(request.question, True, answer, latency_ms=round((perf_counter() - started) * 1000, 2))
         return ImageResponse(answer=answer)
     except (RuntimeError, httpx.HTTPError, ValueError, KeyError):
         logger.exception("image description failed")
