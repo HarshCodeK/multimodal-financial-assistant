@@ -5,8 +5,8 @@ import re
 from pathlib import Path
 from time import perf_counter
 
-from .extract import extract_pdf_bytes, image_bytes_to_text, chunk_text
-from .models import Answer, DocumentChunk, RetrievedChunk, SourceType
+from .extract import extract_pdf_bytes, image_bytes_to_text
+from .models import Answer
 from .retrieval import ChromaRetriever, SentenceTransformerEmbedder
 from .store import InteractionStore
 
@@ -190,21 +190,10 @@ def create_default_assistant(project_root: str | Path | None = None) -> Financia
     retriever = ChromaRetriever(
         chroma_dir,
         embedder,
-        collection_name="financial_assistant_local_v2",
+        collection_name="financial_assistant_uploaded_docs_v3",
     )
     store = InteractionStore(sqlite_path)
-    # Refresh the built-in sample once when the local services are first used.
-    sample_path = root / "data" / "sample_policy.txt"
-    if sample_path.exists():
-        sample_text = sample_path.read_text(encoding="utf-8").strip()
-        if sample_text:
-            retriever.upsert(
-                chunk_text(
-                    sample_text,
-                    source=sample_path.name,
-                    source_type=SourceType.text,
-                )
-            )
+    # Deliberately do not index bundled sample text. Only PDFs explicitly uploaded by the user enter this collection.
     return FinancialAssistant(retriever, store)
 
 
