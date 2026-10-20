@@ -1,15 +1,25 @@
 # Interview Q&A
 
-1. **Why RAG?** Policy answers should be grounded in the organization's supplied documents rather than relying on model memory.
-2. **Why ChromaDB instead of SQLite?** Retrieval is vector similarity; SQLite is used for structured logs.
-3. **Why not send the whole document to the LLM?** Retrieval reduces context size and makes source attribution practical.
-4. **Why local embeddings?** They reduce external dependencies and keep the embedding layer replaceable.
-5. **How do you avoid hallucination?** The answerer receives retrieved evidence and is instructed to refuse when evidence is absent; this is not a formal guarantee.
-6. **How do you test RAG without a live LLM?** Fake embeddings, fake answerers, and a real Chroma round trip isolate retrieval from provider behavior.
-7. **Why dependency injection?** It lets API tests run without downloading a model or requiring credentials.
-8. **Why SQLite?** Interaction logs are relational records; they need simple durable writes, not similarity search.
-9. **How is multimodality handled?** PDF text is indexed, while image input is validated and encoded for a configurable vision model. The two paths stay explicit because image-derived facts do not currently have the same retrieval provenance as PDF chunks.
-10. **Why structured LLM output and JSON repair?** The provider is asked for a JSON object with `supported` and `answer`; Pydantic validates the types and required fields. A conservative repair pass handles common formatting mistakes such as Markdown fences and trailing commas. It does not invent missing fields, and malformed responses still fail closed.
-11. **Main limitation?** Retrieval quality depends on the embedding model and corpus; the project is a demonstrator, not a regulated financial system.
+1. **What problem does the project solve?** It lets a user ask questions about a financial policy and see the source text used to answer, instead of relying only on the model's parametric knowledge.
 
-12. **What is logged in SQLite?** Successful question/answer and image interactions include elapsed request time; successful PDF ingestion records the source, indexed chunk count, page count, and elapsed time as structured extraction metadata. The store retains a bounded number of rows and migrates older databases by adding nullable columns without dropping existing history.
+2. **Why RAG?** Relevant passages are retrieved from the supplied policy and sent with the question, which limits context and makes evidence inspection possible.
+
+3. **What is the pipeline?** PyMuPDF extracts text; Sentence Transformers creates embeddings; ChromaDB stores and retrieves chunks; Groq generates an answer constrained by retrieved evidence.
+
+4. **Why ChromaDB and SQLite?** ChromaDB is the vector store for semantic search. SQLite is a relational log for questions, answers, latency, and extraction metadata.
+
+5. **Why local embeddings?** The embedding model runs locally, so the project does not need a separate embedding API.
+
+6. **How does multimodality work?** PDF text is indexed for RAG. Receipt/statement images use a separate Groq vision call. Image outputs are not automatically treated as indexed document evidence.
+
+7. **Is the image feature OCR?** It is vision-model-based reading, not a dedicated OCR engine. The model may misread numbers, so important figures must be verified.
+
+8. **Does it support scanned PDFs?** No. PyMuPDF extracts selectable text; scanned PDFs need OCR, which is not included in this version.
+
+9. **Why run Streamlit and services in one process?** This is a local portfolio demo, so a separate HTTP API and second terminal added setup cost without helping the core demonstration. The UI calls the service layer directly.
+
+10. **How are answers grounded?** The model receives retrieved passages and is instructed to refuse when evidence is insufficient. JSON is validated and common formatting issues are repaired conservatively. This reduces risk but does not guarantee correctness.
+
+11. **What do tests prove?** Unit tests exercise extraction, retrieval, JSON repair, logging, and service behavior with fakes. They do not prove live Groq accuracy, provider availability, or OCR performance.
+
+12. **What are the main limitations?** Retrieval depends on the source and embedding model; image reading can be wrong; scanned PDFs are unsupported; the demo has no multi-user isolation or production governance.
