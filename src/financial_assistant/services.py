@@ -108,7 +108,7 @@ def answer_image_question(question: str, ocr_text: str) -> dict:
         "was", "what", "when", "where", "which", "who", "why", "with", "would",
         "you", "your", "much", "value",
     }
-    token_pattern = re.compile(r"[a-zA-Z]{2,}|\\d+(?:[.,:/-]\\d+)*")
+    token_pattern = re.compile(r"[a-zA-Z]{2,}|\d+(?:[.,:/-]\d+)*")
     aliases = {
         "price": {"price", "cost", "amount", "total", "inr", "rs", "rupees", "₹"},
         "cost": {"price", "cost", "amount", "total", "inr", "rs", "rupees", "₹"},
@@ -139,7 +139,7 @@ def answer_image_question(question: str, ocr_text: str) -> dict:
     if not query_terms:
         return {"supported": False, "answer": "Please ask a more specific question.", "evidence": []}
 
-    lines = [line.strip() for line in re.split(r"[\\r\\n]+|(?<=[.!?])\\s+", ocr_text) if line.strip()]
+    lines = [line.strip() for line in re.split(r"[\r\n]+|(?<=[.!?])\s+", ocr_text) if line.strip()]
     candidates = []
     # Receipt OCR often puts an item name and its price on adjacent lines.
     # Score windows of up to three lines so a product line can be paired with its amount.
