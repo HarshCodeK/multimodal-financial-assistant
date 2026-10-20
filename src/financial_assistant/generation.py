@@ -3,7 +3,8 @@
 import json
 import os
 
-from .diagnostics import normalize_api_key\nfrom .models import RetrievedChunk
+from .diagnostics import normalize_api_key
+from .models import RetrievedChunk
 
 
 class GroundedAnswerGenerator:
