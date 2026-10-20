@@ -9,9 +9,12 @@ from .models import RetrievedChunk
 class GroundedAnswerGenerator:
     """Ask an LLM to answer only from retrieved evidence and return source IDs."""
 
-    def __init__(self, api_key: str | None = None, model: str | None = None):
+    def __init__(self, api_key: str | None = None, model: str | None = None, client=None):
         self.api_key = api_key or os.getenv("GROQ_API_KEY", "").strip()
         self.model = model or os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile").strip()
+        if client is not None:
+            self.client = client
+            return
         if not self.api_key:
             raise RuntimeError(
                 "GROQ_API_KEY is missing. Add it to a local .env file using .env.example as a template."
