@@ -11,7 +11,7 @@ class GroundedAnswerGenerator:
 
     def __init__(self, api_key: str | None = None, model: str | None = None, client=None):
         self.api_key = api_key or os.getenv("GROQ_API_KEY", "").strip()
-        self.model = model or os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile").strip()
+        self.model = model or os.getenv("GROQ_MODEL", "openai/gpt-oss-20b").strip()
         if client is not None:
             self.client = client
             return
