@@ -5,7 +5,7 @@ import os
 from collections import deque
 from pathlib import Path
 from threading import Lock, RLock
-from time import monotonic
+from time import monotonic, perf_counter
 
 import httpx
 from fastapi import FastAPI, File, Header, HTTPException, Response, UploadFile
@@ -149,7 +149,20 @@ async def ingest(file: UploadFile = File(...), x_ingest_token: str = Header(defa
     except Exception as exc:
         logger.exception("document indexing failed")
         raise HTTPException(status_code=503, detail="document indexing is temporarily unavailable") from exc
-    return IngestResponse(source=Path(file.filename).name, chunks_indexed=len(chunks), pages_extracted=len({chunk.page for chunk in chunks}))
+    pages_extracted = len({chunk.page for chunk in chunks})
+    _store.record(
+        question=f"PDF extraction: {Path(file.filename).name}",
+        supported=True,
+        answer=f"Indexed {len(chunks)} text chunks across {pages_extracted} pages.",
+        latency_ms=round((perf_counter() - started) * 1000, 2),
+        extraction_result={
+            "source": Path(file.filename).name,
+            "chunks_indexed": len(chunks),
+            "pages_extracted": pages_extracted,
+            "source_type": "pdf",
+        },
+    )
+    return IngestResponse(source=Path(file.filename).name, chunks_indexed=len(chunks), pages_extracted=pages_extracted)
 
 
 @app.post("/ask", response_model=AskResponse)
@@ -158,7 +171,7 @@ def ask(request: AskRequest, response: Response):
         _ensure_dependencies()
         evidence = _retriever.search(request.question)
         result = _answerer.answer(request.question, evidence)
-        _store.record(request.question, result.supported, result.answer)
+        _store.record(request.question, result.supported, result.answer, latency_ms=round((perf_counter() - started) * 1000, 2))
         return result
     except (RuntimeError, httpx.HTTPError, ValueError, KeyError, json.JSONDecodeError):
         logger.exception("answer generation failed")
