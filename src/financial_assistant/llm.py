@@ -76,7 +76,7 @@ class GroqClient:
     def __init__(self, api_key: str | None = None, model: str | None = None, vision_model: str | None = None):
         self.api_key = api_key or os.getenv("GROQ_API_KEY")
         self.model = model or os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
-        self.vision_model = vision_model or os.getenv("GROQ_VISION_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")
+        self.vision_model = vision_model or os.getenv("GROQ_VISION_MODEL", "qwen/qwen3.8-27b")
         self.base_url = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1/chat/completions")
 
     def _request(self, payload: dict) -> dict:
