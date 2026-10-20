@@ -7,7 +7,7 @@ import base64
 import os
 from pathlib import Path
 
-MAX_IMAGE_BYTES = 5 * 1024 * 1024
+from .diagnostics import normalize_api_key\n\nMAX_IMAGE_BYTES = 5 * 1024 * 1024
 
 
 def _detect_image_mime(raw: bytes) -> str:
@@ -39,7 +39,7 @@ def answer_image_question(
         raise ValueError("Enter a question about the image.")
 
     mime_type = _detect_image_mime(image_bytes)
-    key = api_key or os.getenv("GROQ_API_KEY")
+    key = normalize_api_key(api_key if api_key is not None else os.getenv("GROQ_API_KEY"))
     if not key or key == "replace_with_your_groq_api_key":
         raise ValueError("GROQ_API_KEY is missing. Add your key to the local .env file.")
 
