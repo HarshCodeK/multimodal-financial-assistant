@@ -29,7 +29,7 @@ class ChromaRetriever:
         import chromadb
 
         self.client = chromadb.PersistentClient(path=persist_dir)
-        self.collection = self.client.get_or_create_collection(collection_name)
+        self.collection = self.client.get_or_create_collection(collection_name, metadata={"hnsw:space": "cosine"})
         self.embedder = embedder
         self._write_lock = RLock()
 
