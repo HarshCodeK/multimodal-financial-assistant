@@ -6,8 +6,7 @@ import streamlit as st
 SRC = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SRC))
 
-from financial_assistant.extract import image_bytes_to_text
-from financial_assistant.services import create_default_assistant
+from financial_assistant.services import create_default_assistant, read_image_text
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -94,7 +93,7 @@ if image:
     if st.button("Extract text from image"):
         try:
             with st.spinner("Loading local OCR if needed and reading the image..."):
-                text = image_bytes_to_text(image.getvalue())
+                text = read_image_text(image.getvalue(), PROJECT_ROOT)
             if text:
                 st.subheader("Recognized text")
                 st.text_area("OCR output", text, height=220)
