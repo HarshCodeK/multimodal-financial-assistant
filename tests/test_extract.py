@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pymupdf
 
 from financial_assistant.extract import chunk_text, extract_pdf, extract_pdf_bytes
@@ -40,7 +42,7 @@ def test_image_only_pdf_is_not_silently_ocr_processed():
 
 
 def test_included_sample_pdf_has_extractable_policy_text():
-    sample = __import__("pathlib").Path(__file__).resolve().parents[1] / "data" / "sample_financial_policy.pdf"
+    sample = Path(__file__).resolve().parents[1] / "data" / "sample_financial_policy.pdf"
     chunks = extract_pdf(sample)
 
     assert chunks
