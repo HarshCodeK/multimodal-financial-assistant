@@ -21,7 +21,7 @@ Use Python 3.11 or newer. From the repository folder:
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-pip install -e .
+python -m pip install -e ".[test]"
 python -m streamlit run src/financial_assistant/app.py
 ~~~
 
