@@ -112,3 +112,20 @@ def create_default_assistant(project_root: str | Path | None = None) -> Financia
                 )
             )
     return FinancialAssistant(retriever, store)
+
+
+
+def read_image_text(raw: bytes, project_root: str | Path | None = None) -> str:
+    """OCR an image without loading the embedding model and log the result."""
+    root = Path(project_root) if project_root else Path(__file__).resolve().parents[2]
+    store = InteractionStore(os.getenv("SQLITE_PATH", str(root / "data" / "interactions.db")))
+    started = perf_counter()
+    text = image_bytes_to_text(raw)
+    answer = text or "No readable text was detected."
+    store.record(
+        question="OCR image extraction",
+        supported=bool(text),
+        answer=answer,
+        latency_ms=round((perf_counter() - started) * 1000, 2),
+    )
+    return text
