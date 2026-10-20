@@ -3,14 +3,14 @@
 import json
 import os
 
-from .models import RetrievedChunk
+from .diagnostics import normalize_api_key\nfrom .models import RetrievedChunk
 
 
 class GroundedAnswerGenerator:
     """Ask an LLM to answer only from retrieved evidence and return source IDs."""
 
     def __init__(self, api_key: str | None = None, model: str | None = None, client=None):
-        self.api_key = api_key or os.getenv("GROQ_API_KEY", "").strip()
+        self.api_key = normalize_api_key(api_key if api_key is not None else os.getenv("GROQ_API_KEY", ""))
         self.model = model or os.getenv("GROQ_MODEL", "openai/gpt-oss-20b").strip()
         if client is not None:
             self.client = client
