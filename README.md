@@ -8,7 +8,8 @@ A **local-only** financial document demo. It extracts text from PDFs and receipt
 - **OCR fallback:** RapidOCR reads scanned PDF pages that have little/no text layer and extracts text from receipt/statement images.
 - **Chunking:** text is split into 180-word chunks with 35-word overlap so context near chunk boundaries is retained.
 - **Semantic retrieval:** Sentence Transformers creates local embeddings; ChromaDB stores chunks and retrieves semantically similar passages.
-- **Grounded results:** answers show the best matching passages and their source/page. This version is intentionally extractive; it does not generate claims with an external LLM.
+- **Policy questions:** questions are embedded and searched against the local ChromaDB index. The UI shows matching passages with source/page metadata; this version does not generate free-form LLM answers.
+- **Receipt questions:** local OCR preserves recognized line boundaries. A small extractive matcher selects OCR lines that overlap with the question and shows the evidence. It abstains when no useful overlap is found; it is not a language model and cannot infer facts OCR failed to read.
 - **SQLite logs:** records questions, results, elapsed time, and PDF indexing metadata.
 - **One local process:** Streamlit calls Python services directly. No FastAPI server, Docker, API URL, ingestion token, Groq key, or cloud model calls.
 
@@ -43,7 +44,7 @@ The bundled `data/sample_policy.txt` is also indexed automatically when the loca
 ~~~text
 PDF → PyMuPDF text extraction → OCR fallback for scanned pages → 180-word chunks / 35-word overlap
 Question → local sentence embedding → ChromaDB semantic retrieval → relevant source passages
-Receipt image → local RapidOCR → recognized text
+Receipt image → local RapidOCR → recognized text lines → question-term matching → relevant OCR evidence
 Interaction metadata → SQLite
 ~~~
 
@@ -59,7 +60,8 @@ Interaction metadata → SQLite
 
 ## Limitations
 
-- Results are extractive: the app returns relevant source passages, not free-form LLM-generated summaries.
+- Policy Q&A is semantic retrieval, not LLM generation: it returns relevant source passages, not a synthesized answer.
+- Receipt Q&A uses lexical matching over OCR lines. It can miss paraphrases and must not be treated as verified financial data.
 - OCR can confuse similar characters and numbers. Verify financial figures against the original.
 - The embedding model and OCR runtime may need downloads on first use. If model downloads fail, the app shows an error when the relevant feature is used.
 - This is a local single-user demo, not a production financial product or financial advice.
