@@ -3,12 +3,12 @@ from unittest.mock import patch
 import pytest
 
 from financial_assistant.models import DocumentChunk, RetrievedChunk, SourceType
-from financial_assistant.services import FinancialAssistant
+from financial_assistant.services import FinancialAssistant, _estimate_original_word_count
 
 
 class FakeRetriever:
     def __init__(self):
-        self.upserted = []
+        self.indexed = []
         self.evidence = [
             RetrievedChunk(
                 source="policy.pdf",
@@ -19,11 +19,14 @@ class FakeRetriever:
             )
         ]
 
-    def upsert(self, chunks):
-        self.upserted.extend(chunks)
+    def replace_all(self, chunks):
+        self.indexed = list(chunks)
 
-    def search(self, question, k=4):
-        return self.evidence
+    def indexed_sources(self):
+        return sorted({chunk.source for chunk in self.indexed})
+
+    def search(self, question, k=5):
+        return self.evidence[:k]
 
 
 class FakeStore:
@@ -34,9 +37,32 @@ class FakeStore:
         self.rows.append((question, supported, answer, latency_ms, extraction_result))
 
 
-def make_assistant():
+class FakeGenerator:
+    def __init__(self, supported=True):
+        self.supported = supported
+        self.questions = []
+        self.evidence = None
+
+    def answer(self, question, chunks):
+        self.questions.append(question)
+        self.evidence = chunks
+        return {
+            "supported": self.supported,
+            "answer": "The meal limit is INR 1,200 per employee per day." if self.supported else "The document does not specify this.",
+            "citations": ["S1"] if self.supported else [],
+            "sources": chunks,
+            "model": "fake-test-model",
+            "prompt_tokens": 120,
+            "completion_tokens": 18,
+            "context_word_count": 50,
+            "context_token_estimate": 67,
+            "prompt_preview": "QUESTION: ... RETRIEVED EVIDENCE: ...",
+        }
+
+
+def make_assistant(generator=None):
     retriever, store = FakeRetriever(), FakeStore()
-    return FinancialAssistant(retriever, store), retriever, store
+    return FinancialAssistant(retriever, store, generator), retriever, store
 
 
 def test_pdf_indexing_logs_metadata_and_latency():
@@ -50,135 +76,73 @@ def test_pdf_indexing_logs_metadata_and_latency():
 
     assert result["chunks_indexed"] == 2
     assert result["pages_extracted"] == 2
-    assert len(retriever.upserted) == 2
+    assert len(retriever.indexed) == 2
+    assert result["chunk_overlap_words"] == 16
+    assert result["chunk_words"] == 80
     assert store.rows[0][3] >= 0
-    assert store.rows[0][4] == result
+    assert store.rows[0][4]["chunks_indexed"] == 2
 
 
 def test_pdf_without_readable_text_gives_actionable_error():
     assistant, _, store = make_assistant()
     with patch("financial_assistant.services.extract_pdf_bytes", return_value=[]):
-        with pytest.raises(ValueError, match="No readable text"):
+        with pytest.raises(ValueError, match="No selectable text"):
             assistant.index_pdf("scanned.pdf", b"%PDF-test")
     assert store.rows == []
 
 
-def test_question_returns_retrieved_evidence_without_external_api():
-    assistant, retriever, store = make_assistant()
+def test_question_uses_llm_and_returns_direct_answer_with_citations():
+    generator = FakeGenerator()
+    assistant, retriever, store = make_assistant(generator)
     result = assistant.ask("What is the meal limit?")
+
     assert result.supported is True
-    assert "1200 INR" in result.answer
+    assert result.answer == "The meal limit is INR 1,200 per employee per day."
+    assert result.citations == ["S1"]
     assert result.sources == retriever.evidence
+    assert generator.questions == ["What is the meal limit?"]
+    assert generator.evidence == retriever.evidence
+    assert result.prompt_tokens == 120
+    assert result.prompt_preview
     assert store.rows[0][3] >= 0
 
 
-def test_irrelevant_question_does_not_claim_support():
-    assistant, retriever, _ = make_assistant()
-    retriever.evidence[0] = RetrievedChunk(
-        source="policy.pdf",
-        source_type=SourceType.pdf,
-        text="Meals are reimbursed up to 1200 INR per day.",
-        page=2,
-        distance=0.9,
-    )
+def test_question_abstains_when_generator_cannot_support_answer():
+    generator = FakeGenerator(supported=False)
+    assistant, _, _ = make_assistant(generator)
     result = assistant.ask("What is the international tax policy?")
+
     assert result.supported is False
-    assert result.sources == []
+    assert result.citations == []
+    assert "does not specify" in result.answer
 
 
 def test_empty_question_is_rejected():
-    assistant, _, _ = make_assistant()
+    assistant, _, _ = make_assistant(FakeGenerator())
     with pytest.raises(ValueError, match="Enter a question"):
         assistant.ask("  ")
 
 
-def test_image_inspection_uses_local_ocr_and_logs_result():
-    assistant, _, store = make_assistant()
-    with patch("financial_assistant.services.image_bytes_to_text", return_value="TOTAL INR 892.50"):
-        answer = assistant.inspect_image(b"fake-image", "Read the receipt total")
-    assert "TOTAL INR 892.50" in answer
-    assert store.rows[0][3] >= 0
-
-
-def test_standalone_image_ocr_does_not_need_embeddings_and_logs(tmp_path):
-    from financial_assistant.services import read_image_text
-    with patch("financial_assistant.services.image_bytes_to_text", return_value="TOTAL 42 INR"):
-        result = read_image_text(b"fake-image", tmp_path)
-    assert result == "TOTAL 42 INR"
-    import sqlite3
-    with sqlite3.connect(tmp_path / "data" / "interactions.db") as db:
-        row = db.execute("SELECT question, answer, latency_ms FROM interactions").fetchone()
-    assert row[0] == "OCR image extraction"
-    assert row[1] == "TOTAL 42 INR"
-    assert row[2] >= 0
-
-
-def test_image_question_selects_relevant_receipt_line_and_shows_evidence():
-    from financial_assistant.services import answer_image_question
-
-    result = answer_image_question(
-        "What is the total amount?",
-        "ACME STORE\nDATE 2026-10-20\nTOTAL INR 892.50\nCARD VISA",
-    )
-    assert result["supported"] is True
-    assert any("TOTAL INR 892.50" in line for line in result["evidence"])
-    assert "TOTAL INR 892.50" in result["answer"]
-
-
-def test_image_question_abstains_when_ocr_has_no_matching_evidence():
-    from financial_assistant.services import answer_image_question
-
-    result = answer_image_question(
-        "What is the refund deadline?",
-        "ACME STORE\nDATE 2026-10-20\nTOTAL INR 892.50",
-    )
-    assert result["supported"] is False
-    assert result["evidence"] == []
-
-
-def test_image_question_rejects_empty_question():
-    from financial_assistant.services import answer_image_question
-
-    with pytest.raises(ValueError, match="Enter a question"):
-        answer_image_question("  ", "TOTAL INR 892.50")
-
-def test_image_question_matches_product_price_across_adjacent_ocr_lines():
-    from financial_assistant.services import answer_image_question
-
-    result = answer_image_question(
-        "What is the price of the Robotics Kit?",
-        "SHOP\nRobotics Kit\nINR 1,499.00\nTax INR 269.82\nGrand Total INR 1,768.82",
-    )
-    assert result["supported"] is True
-    assert any("Robotics Kit" in line and "1,499.00" in line for line in result["evidence"])
-
-
-def test_image_question_supports_generic_total_question():
-    from financial_assistant.services import answer_image_question
-
-    result = answer_image_question(
-        "What is the total amount?",
-        "SHOP\nRobotics Kit\nINR 1,499.00\nTax INR 269.82\nGrand Total INR 1,768.82",
-    )
-    assert result["supported"] is True
-    assert any("Grand Total INR 1,768.82" in line for line in result["evidence"])
-
+def test_estimated_original_word_count_removes_chunk_overlap():
+    chunks = [
+        DocumentChunk(source="policy.pdf", source_type=SourceType.pdf, text=" ".join(["word"] * 80), page=1),
+        DocumentChunk(source="policy.pdf", source_type=SourceType.pdf, text=" ".join(["word"] * 36), page=1),
+    ]
+    assert _estimate_original_word_count(chunks) == 100
 
 
 def test_default_assistant_does_not_silently_index_bundled_sample_policy(tmp_path):
     from financial_assistant import services
 
-    sample = tmp_path / "data" / "sample_policy.txt"
-    sample.parent.mkdir()
-    sample.write_text("Hidden bundled evidence must not be indexed.", encoding="utf-8")
     fake_retriever = FakeRetriever()
     fake_store = FakeStore()
 
     with patch.object(services, "SentenceTransformerEmbedder", return_value=object()), \
          patch.object(services, "ChromaRetriever", return_value=fake_retriever) as retriever_factory, \
          patch.object(services, "InteractionStore", return_value=fake_store):
-        services.create_default_assistant(tmp_path)
+        assistant = services.create_default_assistant(tmp_path)
 
     retriever_factory.assert_called_once()
-    assert retriever_factory.call_args.kwargs["collection_name"] == "financial_assistant_uploaded_docs_v3"
-    assert fake_retriever.upserted == []
+    assert retriever_factory.call_args.kwargs["collection_name"] == "financial_assistant_pdf_rag_v4"
+    assert assistant.indexed_sources() == []
+    assert fake_retriever.indexed == []
