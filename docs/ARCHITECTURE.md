@@ -1,40 +1,34 @@
 # Architecture
 
-## Goal
+## Design goal
 
-Provide a small local demo that answers questions about financial policies using retrieved document evidence and separately reads visible details from receipt or statement images.
+A small local tool that extracts text from financial PDFs and receipt images, chunks document text, embeds it, and retrieves relevant evidence without requiring an API key or separate server.
 
-## One-process design
+## One-process flow
 
-Run one command: `python -m streamlit run src/financial_assistant/app.py`.
+Run `python -m streamlit run src/financial_assistant/app.py`. The Streamlit UI calls local Python services directly.
 
-The Streamlit UI calls `FinancialAssistant` in `services.py` directly. There is no local HTTP hop, separate FastAPI process, API URL setting, or ingestion-token requirement.
+## PDF ingestion and RAG
 
-## PDF RAG flow
+1. PyMuPDF extracts selectable text page by page.
+2. Pages with little or no text are rendered to images and passed through local RapidOCR.
+3. Text is split into 180-word chunks with 35-word overlap.
+4. Sentence Transformers embeds the chunks locally.
+5. ChromaDB persists vectors and source/page metadata.
+6. A question is embedded and the closest chunks are retrieved.
+7. The app displays the retrieved passages and their source/page rather than inventing a generated answer.
 
-1. PyMuPDF extracts selectable text from each PDF page, with input and extraction limits.
-2. Each page becomes a `DocumentChunk` carrying source and page metadata.
-3. Sentence Transformers embeds the text locally.
-4. ChromaDB persists vectors and text chunks.
-5. A user question is embedded and the closest chunks are retrieved.
-6. Groq receives the question and retrieved evidence, and returns a structured supported/answer result.
-7. Supported answers display their source chunks; unsupported answers do not display retrieved chunks as citations.
+The embedding model is initialized only after the user first indexes a PDF or asks a question, so the UI can render without waiting for model loading.
 
-The included `data/sample_policy.txt` is indexed or refreshed when the app initializes. The local app uses a dedicated collection so it does not reuse the previous API demo's collection. Uploaded PDFs are stored in the local collection by filename; uploading the same filename replaces its old chunks.
+## Image OCR
 
-## Image flow
-
-The app validates and converts PNG/JPEG uploads to a data URL and sends them to a Groq vision model. The vision model may read receipt text and figures, but this is not a dedicated OCR engine and its output may contain mistakes. Image descriptions are not automatically inserted into the PDF RAG index.
-
-Scanned PDFs are not OCR-processed in this version. A PDF without selectable text returns a clear error instead of silently indexing an empty document.
+Uploaded images are validated with Pillow and passed to RapidOCR locally. The recognized text is displayed to the user. No image is sent to a remote vision API. OCR is text recognition, not general visual reasoning; verify totals and dates.
 
 ## Persistence
 
-- **ChromaDB** stores indexed document text, embeddings, and source metadata.
-- **SQLite** stores interaction records, latency, and structured PDF ingestion results. It is not the retrieval index.
+- ChromaDB stores chunks, embeddings, and source metadata.
+- SQLite stores interaction records, latency, and PDF extraction metadata.
 
-## Grounding and limitations
+## Trade-offs
 
-The text model is instructed to answer only from retrieved evidence. Its JSON response is validated, with a conservative repair pass for common formatting errors. Missing fields are not invented, but this does not guarantee that every model answer is correct.
-
-The project has no accounts, shared hosted index, tenant isolation, or production data governance. Keep API keys out of source control and use synthetic documents for demonstrations.
+This version intentionally removes the Groq client, external API calls, FastAPI, Docker, and deployment configuration. It is simpler to run and does not require credentials, but it does not generate free-form LLM answers. It returns retrieved evidence. OCR and embedding models may need initial downloads. The application is a local single-user demo.
