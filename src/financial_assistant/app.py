@@ -299,19 +299,38 @@ with image_tab:
         )
         if analyze_clicked and uploaded_image is not None:
             try:
+                started = perf_counter()
                 with st.spinner("Sending the image and question to the Groq vision model..."):
                     vision_result = answer_image_question(
                         image_bytes=uploaded_image.getvalue(),
                         filename=uploaded_image.name,
                         question=image_question,
                     )
+                vision_result["latency_ms"] = round((perf_counter() - started) * 1000, 2)
                 st.session_state["last_image_result"] = {
                     "filename": uploaded_image.name,
                     "question": image_question.strip(),
                     **vision_result,
                 }
+                image_cost = estimate_vision_cost_usd(
+                    vision_result.get("prompt_tokens"), vision_result.get("completion_tokens")
+                )
+                get_assistant().store.record(
+                    question=image_question.strip(),
+                    supported=True,
+                    answer=vision_result["answer"],
+                    latency_ms=vision_result["latency_ms"],
+                    workflow="image_vision",
+                    model=vision_result.get("model"),
+                    prompt_tokens=vision_result.get("prompt_tokens"),
+                    completion_tokens=vision_result.get("completion_tokens"),
+                    estimated_cost_usd=image_cost,
+                    input_chars=len(image_question),
+                    input_words=len(image_question.split()),
+                    input_bytes=len(uploaded_image.getvalue()),
+                )
             except Exception as exc:
-                st.error(f"Could not analyze this image: {exc}")
+                st.error(friendly_groq_error(exc, "image analysis"))
 
     image_result = st.session_state.get("last_image_result")
     if image_result:
@@ -334,7 +353,135 @@ with image_tab:
             "financial values against the original image."
         )
 
+        st.subheader("Usage and estimated cost")
+        vision_usage_cost = estimate_vision_cost_usd(
+            image_result.get("prompt_tokens"), image_result.get("completion_tokens")
+        )
+        if vision_usage_cost is not None:
+            st.metric("Estimated vision API cost for this call", f"\${vision_usage_cost:.8f} USD")
+            st.caption(
+                "Calculated from provider-reported input/output tokens and default Qwen3.6-27B rates "
+                "($0.60/M input, $3.00/M output). Published-rate estimate, not an invoice."
+            )
+        else:
+            st.info(
+                f"The provider did not return usage. A rough estimate starts at {GROQ_QWEN_IMAGE_INPUT_TOKENS:,} "
+                "image input tokens plus the question and answer; adjust assumptions in the comparison below."
+            )
+
+        with st.expander("Compare direct vision vs OCR + text LLM", expanded=True):
+            st.write(
+                "This is a cost calculator, not a live OCR implementation. Direct vision sends the image to Qwen. "
+                "The alternative assumes cloud OCR extracts text first, then GPT-OSS-20B answers from that text. "
+                "OCR can lose layout, handwriting, chart structure, or visual context."
+            )
+            rate_col1, rate_col2 = st.columns(2)
+            with rate_col1:
+                vision_input_rate = st.number_input(
+                    "Vision input price (USD / 1M tokens)", min_value=0.0,
+                    value=DEFAULT_VISION_RATES.input_per_million, step=0.05, format="%.4f",
+                    key="vision_input_rate",
+                )
+                vision_output_rate = st.number_input(
+                    "Vision output price (USD / 1M tokens)", min_value=0.0,
+                    value=DEFAULT_VISION_RATES.output_per_million, step=0.25, format="%.4f",
+                    key="vision_output_rate",
+                )
+                text_input_rate = st.number_input(
+                    "Text LLM input price (USD / 1M tokens)", min_value=0.0,
+                    value=DEFAULT_TEXT_RATES.input_per_million, step=0.01, format="%.4f",
+                    key="text_input_rate",
+                )
+                text_output_rate = st.number_input(
+                    "Text LLM output price (USD / 1M tokens)", min_value=0.0,
+                    value=DEFAULT_TEXT_RATES.output_per_million, step=0.05, format="%.4f",
+                    key="text_output_rate",
+                )
+            with rate_col2:
+                ocr_price = st.number_input(
+                    "Cloud OCR price per image (USD)", min_value=0.0,
+                    value=GOOGLE_VISION_OCR_USD_PER_IMAGE, step=0.0005, format="%.6f",
+                    key="ocr_price",
+                )
+                ocr_text_tokens = st.number_input(
+                    "Estimated OCR text tokens", min_value=0, max_value=200000, value=300, step=50,
+                    key="ocr_text_tokens",
+                )
+                assumed_output_tokens = st.number_input(
+                    "Assumed answer output tokens", min_value=1, max_value=8000,
+                    value=int(image_result.get("completion_tokens") or 100), step=10,
+                    key="comparison_output_tokens",
+                )
+                prompt_overhead = st.number_input(
+                    "Text LLM instructions/question overhead tokens", min_value=0, max_value=10000,
+                    value=250, step=25, key="comparison_prompt_overhead",
+                )
+                free_ocr_tier = st.checkbox(
+                    "Assume Google Cloud Vision's first 1,000 OCR units/month are still free",
+                    value=False, key="ocr_free_tier",
+                )
+            vision_rates = TokenRates(vision_input_rate, vision_output_rate)
+            text_rates = TokenRates(text_input_rate, text_output_rate)
+            vision_input_for_estimate = (
+                image_result.get("prompt_tokens")
+                if image_result.get("prompt_tokens") is not None
+                else GROQ_QWEN_IMAGE_INPUT_TOKENS + round(len(image_result["question"].split()) * 1.33)
+            )
+            vision_output_for_estimate = (
+                image_result.get("completion_tokens")
+                if image_result.get("completion_tokens") is not None
+                else int(assumed_output_tokens)
+            )
+            vision_estimate = token_cost_usd(
+                int(vision_input_for_estimate), int(vision_output_for_estimate), vision_rates
+            )
+            ocr_estimate = estimate_ocr_then_text_cost_usd(
+                int(ocr_text_tokens),
+                int(assumed_output_tokens),
+                text_rates=text_rates,
+                ocr_cost_usd=0.0 if free_ocr_tier else ocr_price,
+                prompt_overhead_tokens=int(prompt_overhead),
+            )
+            compare_a, compare_b = st.columns(2)
+            compare_a.metric("Direct vision estimate", f"\${vision_estimate:.8f} USD")
+            compare_b.metric("OCR + text LLM estimate", f"\${ocr_estimate:.8f} USD")
+            if ocr_estimate < vision_estimate:
+                st.success(
+                    f"Under these assumptions, OCR + text LLM is about "
+                    f"{vision_estimate / max(ocr_estimate, 1e-12):.2f}× cheaper."
+                )
+            elif vision_estimate < ocr_estimate:
+                st.success(
+                    f"Under these assumptions, direct vision is about "
+                    f"{ocr_estimate / max(vision_estimate, 1e-12):.2f}× cheaper."
+                )
+            else:
+                st.info("The two estimates are equal under these assumptions.")
+            st.caption(
+                "Default rates: Groq Qwen3.6-27B $0.60/M input and $3/M output; Groq GPT-OSS-20B "
+                "$0.075/M input and $0.30/M output; Google Cloud Vision OCR $1.50 per 1,000 images after its "
+                "monthly free tier. These are editable published-rate assumptions, not actual billing records. "
+                "Image tokenization and OCR free-tier usage can change the real bill."
+            )
+
 st.caption(
     "PDF RAG and image Q&A are separate workflows: PDF content is indexed for retrieval; images are analyzed directly "
     "per request and are not persisted in ChromaDB."
 )
+
+with st.expander("Local usage and estimated-cost log"):
+    st.caption(
+        "Recent requests are recorded in the local SQLite database. It stores question/answer text, latency, token "
+        "usage, estimated USD cost and input lengths, but never the API key or uploaded image bytes."
+    )
+    usage_rows = get_assistant().store.recent_usage(100)
+    if usage_rows:
+        st.dataframe(usage_rows, use_container_width=True, hide_index=True)
+        st.download_button(
+            "Download usage log as JSON",
+            data=json.dumps(usage_rows, indent=2, ensure_ascii=False),
+            file_name="financial_assistant_usage_log.json",
+            mime="application/json",
+        )
+    else:
+        st.info("No request records yet. Ask a PDF question or analyze an image to create a usage record.")
