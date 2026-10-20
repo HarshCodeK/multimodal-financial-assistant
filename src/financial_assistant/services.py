@@ -83,18 +83,19 @@ def create_default_assistant(project_root: str | Path | None = None) -> Financia
     chroma_dir = os.getenv("CHROMA_DIR", str(root / ".chroma"))
     sqlite_path = os.getenv("SQLITE_PATH", str(root / "data" / "interactions.db"))
     embedder = SentenceTransformerEmbedder(os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2"))
-    retriever = ChromaRetriever(chroma_dir, embedder)
+    retriever = ChromaRetriever(chroma_dir, embedder, collection_name="financial_assistant_local")
     store = InteractionStore(sqlite_path)
-    if retriever.collection.count() == 0:
-        sample_path = root / "data" / "sample_policy.txt"
-        if sample_path.exists():
-            sample_text = sample_path.read_text(encoding="utf-8").strip()
-            if sample_text:
-                retriever.upsert([
-                    DocumentChunk(
-                        source=sample_path.name,
-                        source_type=SourceType.text,
-                        text=sample_text,
-                    )
-                ])
+    # Keep the bundled sample policy current even when an existing local index is reused.
+    # A dedicated collection avoids mixing with data from the old API-based demo.
+    sample_path = root / "data" / "sample_policy.txt"
+    if sample_path.exists():
+        sample_text = sample_path.read_text(encoding="utf-8").strip()
+        if sample_text:
+            retriever.upsert([
+                DocumentChunk(
+                    source=sample_path.name,
+                    source_type=SourceType.text,
+                    text=sample_text,
+                )
+            ])
     return FinancialAssistant(retriever, GroqClient(), store)
