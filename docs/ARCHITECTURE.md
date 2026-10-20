@@ -1,30 +1,40 @@
 # Architecture
 
 ## Goal
-Answer questions about financial policies from supplied evidence and refuse unsupported questions.
 
-## Flow
-1. PDF text is extracted into page-aware chunks.
-2. Images are validated and converted to a data URL for the vision endpoint.
-3. Text chunks are embedded and stored in ChromaDB.
-4. A question retrieves the closest chunks.
-5. The LLM receives only retrieved evidence and is instructed to stay grounded.
-6. SQLite records the interaction; it is not the retrieval store.
+Provide a small local demo that answers questions about financial policies using retrieved document evidence and separately reads visible details from receipt or statement images.
 
-## Why ChromaDB over SQL
-Semantic retrieval is the core query: find passages close to a question in embedding space. ChromaDB provides a simple persistent vector collection without implementing vector storage, indexing, and distance search ourselves. SQLite remains a better fit for structured interaction logs where exact filtering and durability matter.
+## One-process design
 
-## Why sentence-transformers
-The embedding model runs locally, avoiding an additional embedding API dependency and keeping the retrieval boundary explicit. `all-MiniLM-L6-v2` is small enough for a portfolio project and replaceable behind the `Embedder` protocol.
+Run one command: `python -m streamlit run src/financial_assistant/app.py`.
 
-## Why FastAPI
-The API creates a clean boundary between the service and the Streamlit demo, and it is easy to test with dependency injection.
+The Streamlit UI calls `FinancialAssistant` in `services.py` directly. There is no local HTTP hop, separate FastAPI process, API URL setting, or ingestion-token requirement.
 
-## Grounding contract
-The text-answer provider must return structured JSON containing `supported` and `answer`. Pydantic validates that response before it becomes an API response. When `supported=false`, retrieved sources are omitted from the answer so the UI does not present unsupported passages as citations. This reduces accidental overclaiming but is not a formal hallucination guarantee.
+## PDF RAG flow
 
-## Image boundary
-Images use a separate vision endpoint rather than being silently inserted into the text retrieval index. The API validates the data-URL media type and size before passing it to the vision provider. This keeps the multimodal path explicit and avoids pretending that image-derived facts have the same provenance as indexed PDF text.
+1. PyMuPDF extracts selectable text from each PDF page, with input and extraction limits.
+2. Each page becomes a `DocumentChunk` carrying source and page metadata.
+3. Sentence Transformers embeds the text locally.
+4. ChromaDB persists vectors and text chunks.
+5. A user question is embedded and the closest chunks are retrieved.
+6. Groq receives the question and retrieved evidence, and returns a structured supported/answer result.
+7. Supported answers display their source chunks; unsupported answers do not display retrieved chunks as citations.
 
-## Design boundary
-The project does not claim financial advice, transaction execution, compliance certification, or production-grade document governance.
+The included `data/sample_policy.txt` is indexed when the local Chroma collection is empty. Uploaded PDFs are stored in the local collection by filename; uploading the same filename replaces its old chunks.
+
+## Image flow
+
+The app validates and converts PNG/JPEG uploads to a data URL and sends them to a Groq vision model. The vision model may read receipt text and figures, but this is not a dedicated OCR engine and its output may contain mistakes. Image descriptions are not automatically inserted into the PDF RAG index.
+
+Scanned PDFs are not OCR-processed in this version. A PDF without selectable text returns a clear error instead of silently indexing an empty document.
+
+## Persistence
+
+- **ChromaDB** stores indexed document text, embeddings, and source metadata.
+- **SQLite** stores interaction records, latency, and structured PDF ingestion results. It is not the retrieval index.
+
+## Grounding and limitations
+
+The text model is instructed to answer only from retrieved evidence. Its JSON response is validated, with a conservative repair pass for common formatting errors. Missing fields are not invented, but this does not guarantee that every model answer is correct.
+
+The project has no accounts, shared hosted index, tenant isolation, or production data governance. Keep API keys out of source control and use synthetic documents for demonstrations.
