@@ -74,7 +74,7 @@ def test_question_returns_retrieved_evidence_without_external_api():
 
 def test_irrelevant_question_does_not_claim_support():
     assistant, retriever, _ = make_assistant()
-    retriever.evidence[0] = retriever.evidence[0].model_copy(update={"distance": 0.9})
+    retriever.evidence[0] = RetrievedChunk(\n        source="policy.pdf", source_type=SourceType.pdf, text="Meals are reimbursed up to 1200 INR per day.", page=2, distance=0.9\n    )
     result = assistant.ask("What is the international tax policy?")
     assert result.supported is False
     assert result.sources == []
