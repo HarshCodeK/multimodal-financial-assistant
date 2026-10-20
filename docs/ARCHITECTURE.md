@@ -20,7 +20,7 @@ The Streamlit UI calls `FinancialAssistant` in `services.py` directly. There is 
 6. Groq receives the question and retrieved evidence, and returns a structured supported/answer result.
 7. Supported answers display their source chunks; unsupported answers do not display retrieved chunks as citations.
 
-The included `data/sample_policy.txt` is indexed when the local Chroma collection is empty. Uploaded PDFs are stored in the local collection by filename; uploading the same filename replaces its old chunks.
+The included `data/sample_policy.txt` is indexed or refreshed when the app initializes. The local app uses a dedicated collection so it does not reuse the previous API demo's collection. Uploaded PDFs are stored in the local collection by filename; uploading the same filename replaces its old chunks.
 
 ## Image flow
 
