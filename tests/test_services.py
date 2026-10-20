@@ -147,7 +147,7 @@ def test_image_question_matches_product_price_across_adjacent_ocr_lines():
 
     result = answer_image_question(
         "What is the price of the Robotics Kit?",
-        "SHOP\\nRobotics Kit\\nINR 1,499.00\\nTax INR 269.82\\nGrand Total INR 1,768.82",
+        "SHOP\nRobotics Kit\nINR 1,499.00\nTax INR 269.82\nGrand Total INR 1,768.82",
     )
     assert result["supported"] is True
     assert any("Robotics Kit" in line and "1,499.00" in line for line in result["evidence"])
@@ -158,7 +158,7 @@ def test_image_question_supports_generic_total_question():
 
     result = answer_image_question(
         "What is the total amount?",
-        "SHOP\\nRobotics Kit\\nINR 1,499.00\\nGrand Total INR 1,768.82",
+        "SHOP\nRobotics Kit\nINR 1,499.00\nTax INR 269.82\nGrand Total INR 1,768.82",
     )
     assert result["supported"] is True
     assert any("Grand Total INR 1,768.82" in line for line in result["evidence"])
