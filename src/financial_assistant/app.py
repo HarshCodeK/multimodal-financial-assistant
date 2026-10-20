@@ -151,6 +151,11 @@ with pdf_tab:
     indexed_sources = assistant.indexed_sources()
     if indexed_sources:
         st.success("Currently indexed PDF: " + ", ".join(indexed_sources))
+        if st.button("Clear indexed PDF", help="Permanently remove the current local PDF index from ChromaDB. This does not delete your original PDF file."):
+            assistant.clear_index()
+            st.session_state.pop("last_index_result", None)
+            st.session_state["chat_history"] = []
+            st.rerun()
     else:
         st.info("No PDF is indexed yet. Upload a PDF above and click the indexing button.")
 
