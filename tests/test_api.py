@@ -98,7 +98,7 @@ def test_ingestion_requires_correct_token(monkeypatch):
 
 def test_ingestion_indexes_bounded_extracted_chunks(monkeypatch):
     monkeypatch.setenv("INGEST_API_TOKEN", "owner-secret")
-    retriever, _, _ = configure_fakes()
+    retriever, store, _ = configure_fakes()
     chunk = DocumentChunk(source="policy.pdf", source_type=SourceType.pdf, text="Meals are reimbursed up to 500 INR.", page=1)
     from unittest.mock import patch
     with patch("financial_assistant.api.extract_pdf_bytes", return_value=[chunk]):
@@ -106,8 +106,9 @@ def test_ingestion_indexes_bounded_extracted_chunks(monkeypatch):
     assert response.status_code == 200
     assert response.json()["chunks_indexed"] == 1
     assert len(retriever.upserted) == 1
-    # The ingestion event records extraction metadata and measured elapsed time.
-    # The fake store is returned by configure_fakes; inspect it explicitly below.
+    assert len(store.rows) == 1
+    assert store.rows[0][3] is not None and store.rows[0][3] >= 0
+    assert store.rows[0][4] == {"source": "policy.pdf", "chunks_indexed": 1, "pages_extracted": 1, "source_type": "pdf"}
 
 
 
