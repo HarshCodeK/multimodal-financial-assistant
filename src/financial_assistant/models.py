@@ -32,3 +32,4 @@ class Answer:
     completion_tokens: int | None = None
     context_word_count: int = 0
     context_token_estimate: int = 0
+    prompt_preview: str = ""
