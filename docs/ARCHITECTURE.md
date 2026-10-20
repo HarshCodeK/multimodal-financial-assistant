@@ -14,7 +14,7 @@ Run `python -m streamlit run src/financial_assistant/app.py`. The Streamlit UI c
 2. Pages with little or no text are rendered to images and passed through local RapidOCR.
 3. Text is split into 80-word chunks with 16-word overlap.
 4. Sentence Transformers embeds the chunks locally.
-5. ChromaDB persists vectors and source/page metadata.
+5. ChromaDB persists vectors and source/page metadata in a fresh uploaded-documents collection. Only PDFs explicitly uploaded and indexed by the user enter it; bundled sample text is never automatically indexed.
 6. A question is embedded and the closest chunks are retrieved.
 7. The app displays retrieved passages, source/page metadata, and cosine distance. This is retrieval with extractive evidence display—not free-form LLM generation.
 
@@ -22,7 +22,7 @@ The embedding model is initialized only after the user first indexes a PDF or as
 
 ## Image OCR
 
-Uploaded images are validated with Pillow and passed to RapidOCR locally. Recognized text lines are preserved and displayed. The user can then ask a question; a small lexical matcher ranks one-to-three-line windows by overlap with question terms and common price/amount synonyms, so a product name and its price can be matched when OCR puts them on adjacent lines and displays the matching OCR lines as evidence. It abstains when there is no meaningful overlap. This is deliberately transparent extractive matching, not an LLM and not semantic retrieval. No image is sent to a remote vision API. OCR is text recognition, not general visual reasoning; verify totals and dates.
+Uploaded images are validated with Pillow and passed to RapidOCR locally. Recognized text lines are preserved and displayed in an editable text area. Users should correct OCR mistakes—especially currency digits—against the image before asking a question; a small lexical matcher ranks one-to-three-line windows by overlap with question terms and common price/amount synonyms, so a product name and its price can be matched when OCR puts them on adjacent lines and displays the matching OCR lines as evidence. It abstains when there is no meaningful overlap. This is deliberately transparent extractive matching, not an LLM and not semantic retrieval. No image is sent to a remote vision API. OCR is text recognition, not general visual reasoning; verify totals and dates. The app does not silently rewrite uncertain digits because it cannot establish the correct amount from OCR text alone.
 
 ## Persistence
 
