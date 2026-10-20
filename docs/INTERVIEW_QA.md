@@ -9,5 +9,7 @@
 7. **Why dependency injection?** It lets API tests run without downloading a model or requiring credentials.
 8. **Why SQLite?** Interaction logs are relational records; they need simple durable writes, not similarity search.
 9. **How is multimodality handled?** PDF text is indexed, while image input is validated and encoded for a configurable vision model. The two paths stay explicit because image-derived facts do not currently have the same retrieval provenance as PDF chunks.
-10. **Why structured LLM output?** The provider returns `supported` and `answer` as JSON, then Pydantic validates the contract. This makes refusal behavior testable instead of depending only on prompt wording.
+10. **Why structured LLM output and JSON repair?** The provider is asked for a JSON object with `supported` and `answer`; Pydantic validates the types and required fields. A conservative repair pass handles common formatting mistakes such as Markdown fences and trailing commas. It does not invent missing fields, and malformed responses still fail closed.
 11. **Main limitation?** Retrieval quality depends on the embedding model and corpus; the project is a demonstrator, not a regulated financial system.
+
+12. **What is logged in SQLite?** Successful question/answer and image interactions include elapsed request time; successful PDF ingestion records the source, indexed chunk count, page count, and elapsed time as structured extraction metadata. The store retains a bounded number of rows and migrates older databases by adding nullable columns without dropping existing history.
