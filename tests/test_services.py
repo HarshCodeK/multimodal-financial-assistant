@@ -111,3 +111,34 @@ def test_standalone_image_ocr_does_not_need_embeddings_and_logs(tmp_path):
     assert row[0] == "OCR image extraction"
     assert row[1] == "TOTAL 42 INR"
     assert row[2] >= 0
+
+
+def test_image_question_selects_relevant_receipt_line_and_shows_evidence():
+    from financial_assistant.services import answer_image_question
+
+    result = answer_image_question(
+        "What is the total amount?",
+        "ACME STORE\\nDATE 2026-10-20\\nTOTAL INR 892.50\\nCARD VISA",
+    )
+    assert result["supported"] is True
+    assert any("TOTAL INR 892.50" in line for line in result["evidence"])
+    assert "TOTAL INR 892.50" in result["answer"]
+
+
+def test_image_question_abstains_when_ocr_has_no_matching_evidence():
+    from financial_assistant.services import answer_image_question
+
+    result = answer_image_question(
+        "What is the refund deadline?",
+        "ACME STORE\\nDATE 2026-10-20\\nTOTAL INR 892.50",
+    )
+    assert result["supported"] is False
+    assert result["evidence"] == []
+
+
+def test_image_question_rejects_empty_question():
+    from financial_assistant.services import answer_image_question
+
+    with pytest.raises(ValueError, match="Enter a question"):
+        answer_image_question("  ", "TOTAL INR 892.50")
+
