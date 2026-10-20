@@ -61,7 +61,7 @@ The app and service layer run in the same Streamlit process. SQLite stores inter
 | --- | --- | --- |
 | `GROQ_API_KEY` | unset | Required for LLM answers and image analysis |
 | `GROQ_MODEL` | `llama-3.1-8b-instant` | Text-answer model |
-| `GROQ_VISION_MODEL` | `meta-llama/llama-4-scout-17b-16e-instruct` | Image-analysis model |
+| `GROQ_VISION_MODEL` | `qwen/qwen3.8-27b` | Image-analysis model |
 | `EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | Local embedding model |
 | `CHROMA_DIR` | `.chroma` | Local vector database directory |
 | `SQLITE_PATH` | `data/interactions.db` | Interaction log database |
