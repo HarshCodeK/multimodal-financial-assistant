@@ -110,6 +110,17 @@ def test_question_uses_llm_and_returns_direct_answer_with_citations():
     assert store.rows[0][5]["estimated_cost_usd"] is not None
 
 
+def test_question_passes_only_retrieved_evidence_to_generator():
+    generator = FakeGenerator()
+    assistant, retriever, _ = make_assistant(generator)
+
+    assistant.ask("What is the meal limit?")
+
+    assert generator.evidence == retriever.evidence
+    assert all(source.source == "policy.pdf" for source in generator.evidence)
+    assert all(source.text for source in generator.evidence)
+
+
 def test_question_abstains_when_generator_cannot_support_answer():
     generator = FakeGenerator(supported=False)
     assistant, _, _ = make_assistant(generator)
