@@ -16,11 +16,19 @@ class SentenceTransformerEmbedder:
     """Create semantic vectors with a pretrained Sentence Transformers model."""
 
     def __init__(self, model_name: str = "all-MiniLM-L6-v2"):
-        from sentence_transformers import SentenceTransformer
-
         self.model_name = model_name
-        self.model = SentenceTransformer(model_name)
-        self.dimensions = int(self.model.get_sentence_embedding_dimension())
+        self._model = None
+
+    @property
+    def model(self):
+        if self._model is None:
+            from sentence_transformers import SentenceTransformer
+            self._model = SentenceTransformer(self.model_name)
+        return self._model
+
+    @property
+    def dimensions(self) -> int:
+        return int(self.model.get_sentence_embedding_dimension())
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         return self.model.encode(texts, normalize_embeddings=True).tolist()
@@ -68,7 +76,7 @@ class ChromaRetriever:
         ]
 
         with self._write_lock:
-            existing = self.collection.get(include=[])
+            existing = self.collection.get(include=["metadatas"])
             old_ids = existing.get("ids", [])
             if old_ids:
                 self.collection.delete(ids=old_ids)
