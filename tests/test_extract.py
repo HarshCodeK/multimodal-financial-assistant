@@ -77,3 +77,19 @@ def test_image_payload_rejects_excessive_pixel_count():
     # Image itself is valid; this checks normal extraction does not require any provider key.
     with patch("financial_assistant.extract._ocr_image", return_value="sample text"):
         assert image_bytes_to_text(buffer.getvalue()) == "sample text"
+
+
+def test_bundled_sample_policy_exercises_multiple_chunks():
+    sample = Path(__file__).resolve().parents[1] / "data" / "sample_policy.txt"
+    chunks = chunk_text(
+        sample.read_text(encoding="utf-8"),
+        source=sample.name,
+        source_type=SourceType.text,
+    )
+    assert len(chunks) >= 4
+    assert all(chunk.text.strip() for chunk in chunks)
+    # Adjacent chunks retain the configured overlap from the preceding chunk.
+    first_words = chunks[0].text.split()
+    second_words = chunks[1].text.split()
+    assert first_words[-35:] == second_words[:35]
+
