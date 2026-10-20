@@ -10,8 +10,8 @@ def test_image_validation_and_data_url(tmp_path: Path):
     assert image_bytes_as_data_url(path.read_bytes()).startswith("data:image/jpeg;base64,")
 
 def test_pdf_extraction_preserves_page(tmp_path):
-    import fitz
-    pdf = fitz.open()
+    import pymupdf
+    pdf = pymupdf.open()
     page = pdf.new_page()
     page.insert_text((72, 72), "Meal allowance is 500 INR.")
     path = tmp_path / "policy.pdf"
