@@ -50,7 +50,7 @@ class FinancialAssistant:
         evidence = self.retriever.search(normalized, k=5)
         # Cosine distance is 0 for identical vectors. Avoid presenting unrelated
         # nearest-neighbours as evidence when the query is outside the corpus.
-        relevant = [item for item in evidence if item.distance <= 0.55]
+        relevant = [item for item in evidence if item.distance <= 0.75]
         if relevant:
             answer_text = "Most relevant passages from your indexed documents:\n\n" + "\n\n".join(
                 f"[{item.source}" + (f", page {item.page}" if item.page else "") + f"]\n{item.text}"
