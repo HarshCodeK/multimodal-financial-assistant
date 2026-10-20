@@ -1,88 +1,106 @@
-import os
 from pathlib import Path
-import sys
-import base64
+import os
 
-import requests
 import streamlit as st
 
-SRC = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(SRC))
+from financial_assistant.services import create_default_assistant
 
-st.set_page_config(page_title="Financial Assistant", page_icon="💰")
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+st.set_page_config(page_title="Multimodal Financial Assistant", page_icon="💰", layout="centered")
 st.title("Multimodal Financial Assistant")
-st.caption("Index a policy PDF, ask a question, and inspect the evidence used for the answer.")
-api_url = os.getenv("ASSISTANT_API_URL", "http://localhost:8000").rstrip("/")
+st.caption(
+    "Ask questions about financial-policy PDFs and inspect receipts or statements. "
+    "This demo runs locally in one Streamlit process."
+)
 
 
-def show_api_error(response):
-    if not response.ok:
-        try:
-            detail = response.json().get("detail", "The API could not complete this request.")
-        except ValueError:
-            detail = "The API could not complete this request."
-        st.error(f"API error {response.status_code}: {detail}")
-        return True
-    return False
+@st.cache_resource(show_spinner="Loading the embedding model and local document index...")
+def get_assistant():
+    return create_default_assistant(PROJECT_ROOT)
 
 
-st.subheader("1. Index a policy document")
-st.caption("Indexing changes the shared demo collection and requires an owner-issued access token.")
-policy_pdf = st.file_uploader("Upload a text-based PDF policy", type=["pdf"], key="policy_pdf")
-ingest_token = st.text_input("Ingestion token", type="password", help="Use only a token provided by the site owner.")
-if st.button("Index policy PDF", disabled=policy_pdf is None or not ingest_token):
+with st.sidebar:
+    st.subheader("Configuration")
+    if os.getenv("GROQ_API_KEY"):
+        st.success("Groq API key detected")
+    else:
+        st.warning("Set GROQ_API_KEY before asking questions or inspecting images.")
+    st.caption("PDF extraction uses selectable text. Scanned PDFs are not OCR-processed.")
+    st.caption("Indexed documents and interaction logs are stored locally.")
+
+try:
+    assistant = get_assistant()
+except Exception as exc:
+    st.error(f"Could not initialize the local assistant: {exc}")
+    st.stop()
+
+st.subheader("1. Add a financial policy PDF")
+st.write(
+    "A small sample policy is indexed automatically on first launch. Upload a PDF to add "
+    "or replace a document in your local index. Re-uploading the same filename replaces its chunks."
+)
+policy_pdf = st.file_uploader("Choose a text-based PDF", type=["pdf"], key="policy_pdf")
+if st.button("Index PDF", disabled=policy_pdf is None):
     try:
-        with st.spinner("Extracting pages and indexing chunks..."):
-            response = requests.post(
-                f"{api_url}/ingest",
-                headers={"X-Ingest-Token": ingest_token},
-                files={"file": (policy_pdf.name, policy_pdf.getvalue(), "application/pdf")},
-                timeout=90,
-            )
-        if not show_api_error(response):
-            result = response.json()
-            st.success(f"Indexed {result['chunks_indexed']} chunks from {result['pages_extracted']} text pages.")
-    except requests.RequestException:
-        st.error("Could not reach the assistant API. Check ASSISTANT_API_URL and service status.")
+        with st.spinner("Extracting text and updating the local vector index..."):
+            result = assistant.index_pdf(policy_pdf.name, policy_pdf.getvalue())
+        st.success(
+            f"Indexed {result['chunks_indexed']} text chunks from "
+            f"{result['pages_extracted']} pages in {result['source']}."
+        )
+    except Exception as exc:
+        st.error(f"Could not index this PDF: {exc}")
 
 st.divider()
-st.subheader("2. Ask a grounded question")
-question = st.text_input("Question", placeholder="What is the meal reimbursement limit?")
-if st.button("Ask") and question.strip():
+st.subheader("2. Ask a question")
+question = st.text_input(
+    "Question about the indexed documents",
+    placeholder="What is the maximum meal reimbursement?",
+    key="question",
+)
+if st.button("Ask question", disabled=not question.strip()):
     try:
-        response = requests.post(f"{api_url}/ask", json={"question": question}, timeout=60)
-        if not show_api_error(response):
-            data = response.json()
-            st.write(data["answer"])
-            if data["sources"]:
-                st.subheader("Evidence")
-                for source in data["sources"]:
-                    label = Path(source["source"]).name + (f" — page {source['page']}" if source.get("page") else "")
-                    st.caption(label)
-                    st.write(source["text"])
-            else:
-                st.info("No supporting document evidence was returned.")
-    except requests.RequestException:
-        st.error("Could not reach the assistant API. Check ASSISTANT_API_URL and service status.")
+        with st.spinner("Retrieving relevant passages and generating an answer..."):
+            result = assistant.ask(question)
+        st.write(result.answer)
+        if result.supported and result.sources:
+            st.subheader("Evidence used")
+            for source in result.sources:
+                label = Path(source.source).name
+                if source.page:
+                    label += f" — page {source.page}"
+                st.caption(label)
+                st.write(source.text)
+        else:
+            st.info("No supporting document evidence was returned.")
+    except Exception as exc:
+        st.error(f"Could not answer this question: {exc}")
 
 st.divider()
-st.subheader("3. Inspect an image")
-image = st.file_uploader("Upload a statement or chart image", type=["png", "jpg", "jpeg"], key="image")
+st.subheader("3. Read a receipt or statement image")
+image = st.file_uploader(
+    "Choose a PNG or JPEG image",
+    type=["png", "jpg", "jpeg"],
+    key="image",
+)
+image_question = st.text_input(
+    "What should the assistant look for? (optional)",
+    placeholder="Extract the date, line items, tax, and total; flag uncertain text.",
+    key="image_question",
+)
 if image:
-    st.image(image)
+    st.image(image, caption="Image selected", use_container_width=True)
     if st.button("Inspect image"):
         try:
-            raw = image.getvalue()
-            encoded = base64.b64encode(raw).decode("ascii")
-            mime = image.type or "image/jpeg"
-            response = requests.post(
-                f"{api_url}/describe-image",
-                json={"question": "Read the financial information in this image and summarize the relevant figures.", "image_data_url": f"data:{mime};base64,{encoded}"},
-                timeout=60,
-            )
-            if not show_api_error(response):
-                st.write(response.json()["answer"])
-        except requests.RequestException:
-            st.error("Could not reach the assistant API. Check ASSISTANT_API_URL and service status.")
+            with st.spinner("Sending the image to the Groq vision model..."):
+                answer = assistant.inspect_image(image.getvalue(), image_question)
+            st.write(answer)
+        except Exception as exc:
+            st.error(f"Could not inspect this image: {exc}")
 
-st.caption("This is a portfolio demo, not financial advice. Scanned PDFs are not OCR-processed.")
+st.divider()
+st.caption(
+    "Portfolio demo only; not financial advice. Vision models can misread receipt text and totals. "
+    "Scanned PDFs need OCR, which is not included in this version."
+)
