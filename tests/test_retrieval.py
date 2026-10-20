@@ -35,27 +35,28 @@ def test_chunk_ids_are_stable_and_content_sensitive():
     assert ChromaRetriever._chunk_id(first) != ChromaRetriever._chunk_id(changed)
 
 
-def test_reindex_removes_stale_chunks_from_same_source(tmp_path):
+def test_reindex_replaces_the_previous_document(tmp_path):
     retriever = ChromaRetriever(str(tmp_path), FakeEmbedder(), collection_name="replace-test")
-    retriever.upsert([
+    retriever.replace_all([
         chunk("Meal policy version one.", page=1),
         chunk("Hotel policy old rule.", page=2),
     ])
-    retriever.upsert([chunk("Meal policy version two.", page=1)])
+    retriever.replace_all([chunk("Meal policy version two.", page=1, source="new-policy.pdf")])
     assert retriever.collection.count() == 1
+    assert retriever.indexed_sources() == ["new-policy.pdf"]
     result = retriever.search("meal policy", k=2)
     assert len(result) == 1
     assert "version two" in result[0].text
 
 
-def test_embedding_failure_preserves_existing_source(tmp_path):
+def test_embedding_failure_preserves_previous_index(tmp_path):
     embedder = FakeEmbedder()
     retriever = ChromaRetriever(str(tmp_path), embedder, collection_name="failure-test")
-    retriever.upsert([chunk("Existing policy is still available.")])
+    retriever.replace_all([chunk("Existing policy is still available.")])
     embedder.fail = True
 
     with pytest.raises(RuntimeError, match="simulated embedding failure"):
-        retriever.upsert([chunk("Replacement policy.")])
+        retriever.replace_all([chunk("Replacement policy.")])
 
     embedder.fail = False
     result = retriever.search("existing policy", k=1)
