@@ -50,7 +50,7 @@ def _parse_grounded_response(raw: str) -> _GroundedLLMResponse:
             if in_string:
                 if escaped:
                     escaped = False
-                elif char == "\\\\":
+                elif char == "\\":
                     escaped = True
                 elif char == '"':
                     in_string = False
