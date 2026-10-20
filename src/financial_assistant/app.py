@@ -1,3 +1,4 @@
+import hashlib
 import sys
 from pathlib import Path
 
@@ -6,104 +7,140 @@ import streamlit as st
 SRC = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SRC))
 
-from financial_assistant.services import create_default_assistant, read_image_text
+from financial_assistant.services import answer_image_question, create_default_assistant, read_image_text
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 st.set_page_config(page_title="Multimodal Financial Assistant", page_icon="💰", layout="centered")
 st.title("Multimodal Financial Assistant")
-st.caption(
-    "Local PDF text extraction, overlapping RAG chunks, sentence embeddings, and OCR. "
-    "No API key or separate server is required."
-)
-
+st.caption("Ask questions about financial policies and receipt images. All extraction and retrieval run locally.")
 
 @st.cache_resource(show_spinner=False)
 def get_assistant():
     return create_default_assistant(PROJECT_ROOT)
 
+policy_tab, receipt_tab = st.tabs(["Policy PDF · Q&A", "Receipt image · Q&A"])
 
-st.info(
-    "The embedding model loads only when you first index a PDF or ask a question. "
-    "That first action can take a few minutes while the model downloads; later actions reuse it."
-)
-
-st.subheader("1. Add a financial policy PDF")
-st.write(
-    "The included sample policy is indexed automatically when you first ask a question or index a PDF. "
-    "Uploads are split into overlapping chunks so relevant passages can be retrieved."
-)
-sample_pdf = PROJECT_ROOT / "data" / "sample_financial_policy.pdf"
-if sample_pdf.exists():
-    st.download_button(
-        "Download sample financial policy PDF",
-        data=sample_pdf.read_bytes(),
-        file_name="sample_financial_policy.pdf",
-        mime="application/pdf",
+with policy_tab:
+    st.subheader("Ask a financial policy")
+    st.write(
+        "The bundled sample policy text is indexed when the local assistant initializes. "
+        "Upload and index a PDF to search its contents too."
     )
-policy_pdf = st.file_uploader("Choose a PDF (text-based or scanned)", type=["pdf"], key="policy_pdf")
-if st.button("Index PDF", disabled=policy_pdf is None):
-    try:
-        with st.spinner("Loading the local embedding model if needed, extracting text/OCR, chunking, and indexing..."):
-            assistant = get_assistant()
-            result = assistant.index_pdf(policy_pdf.name, policy_pdf.getvalue())
-        st.success(
-            f"Indexed {result['chunks_indexed']} overlapping chunks from "
-            f"{result['pages_extracted']} pages in {result['source']}."
+    sample_pdf = PROJECT_ROOT / "data" / "sample_financial_policy.pdf"
+    if sample_pdf.exists():
+        st.download_button(
+            "Download sample policy PDF",
+            data=sample_pdf.read_bytes(),
+            file_name="sample_financial_policy.pdf",
+            mime="application/pdf",
         )
-    except Exception as exc:
-        st.error(f"Could not index this PDF: {exc}")
 
-st.divider()
-st.subheader("2. Ask a question")
-question = st.text_input(
-    "Question about the indexed documents",
-    placeholder="What is the maximum meal reimbursement?",
-    key="question",
-)
-if st.button("Ask question", disabled=not question.strip()):
-    try:
-        with st.spinner("Loading local embeddings if needed and retrieving relevant passages..."):
-            assistant = get_assistant()
-            result = assistant.ask(question)
-        st.write(result.answer)
-        if result.supported and result.sources:
-            st.subheader("Retrieved evidence")
-            for source in result.sources:
-                label = Path(source.source).name
-                if source.page:
-                    label += f" — page {source.page}"
-                st.caption(label)
-                st.write(source.text)
-        else:
-            st.info("No sufficiently relevant evidence was found. Try a more specific question or index another document.")
-    except Exception as exc:
-        st.error(f"Could not search the documents: {exc}")
-
-st.divider()
-st.subheader("3. Read a receipt or statement image")
-st.caption("OCR runs locally. It extracts visible text; it does not invent missing figures or require a vision API.")
-image = st.file_uploader(
-    "Choose a PNG or JPEG image",
-    type=["png", "jpg", "jpeg"],
-    key="image",
-)
-if image:
-    st.image(image, caption="Image selected", use_container_width=True)
-    if st.button("Extract text from image"):
+    policy_pdf = st.file_uploader(
+        "Upload a financial policy PDF",
+        type=["pdf"],
+        key="policy_pdf",
+        help="Text PDFs are extracted directly. Scanned pages use local OCR.",
+    )
+    if st.button("Index uploaded PDF", disabled=policy_pdf is None, key="index_pdf"):
         try:
-            with st.spinner("Loading local OCR if needed and reading the image..."):
-                text = read_image_text(image.getvalue(), PROJECT_ROOT)
-            if text:
-                st.subheader("Recognized text")
-                st.text_area("OCR output", text, height=220)
-            else:
-                st.warning("No readable text was detected. Try a sharper image with better lighting.")
+            with st.spinner("Extracting text, chunking, embedding, and saving passages locally..."):
+                result = get_assistant().index_pdf(policy_pdf.name, policy_pdf.getvalue())
+            st.session_state["last_index_result"] = result
+            st.success(
+                f"Indexed {result['chunks_indexed']} chunks from {result['pages_extracted']} pages "
+                f"({result['source']})."
+            )
         except Exception as exc:
-            st.error(f"Could not read this image: {exc}")
+            st.error(f"Could not index this PDF: {exc}")
+
+    question = st.text_input(
+        "Your policy question",
+        placeholder="What is the maximum meal reimbursement?",
+        key="policy_question",
+    )
+    if st.button("Ask about policy", disabled=not question.strip(), key="ask_policy"):
+        try:
+            with st.spinner("Embedding your question and searching the local ChromaDB index..."):
+                result = get_assistant().ask(question)
+            if result.supported and result.sources:
+                st.success("Relevant evidence found. This demo returns source passages rather than generated summaries.")
+                for index, source in enumerate(result.sources, start=1):
+                    label = Path(source.source).name
+                    if source.page:
+                        label += f" · page {source.page}"
+                    st.markdown(f"**Passage {index} — {label}**")
+                    st.write(source.text)
+                    st.caption(f"Cosine distance: {source.distance:.3f} (lower is closer)")
+            else:
+                st.warning(result.answer)
+        except Exception as exc:
+            st.error(f"Could not search the documents: {exc}")
+
+with receipt_tab:
+    st.subheader("Ask about a receipt or statement")
+    st.write("Upload an image, extract the visible text, then ask a question about that text.")
+    image = st.file_uploader(
+        "Upload a receipt or statement image",
+        type=["png", "jpg", "jpeg"],
+        key="receipt_image",
+    )
+
+    if image is not None:
+        raw_image = image.getvalue()
+        image_digest = hashlib.sha256(raw_image).hexdigest()
+        if st.session_state.get("ocr_image_digest") != image_digest:
+            st.session_state["ocr_image_digest"] = image_digest
+            st.session_state["ocr_text"] = ""
+        st.image(image, caption="Selected image", use_container_width=True)
+
+        if st.button("Read image text", key="read_image"):
+            try:
+                with st.spinner("Reading visible text with local OCR..."):
+                    extracted = read_image_text(raw_image, PROJECT_ROOT)
+                st.session_state["ocr_text"] = extracted
+                if extracted:
+                    st.success("Text extracted. Ask a question below.")
+                else:
+                    st.warning("No readable text was detected. Try a sharper, brighter image.")
+            except Exception as exc:
+                st.error(f"Could not read this image: {exc}")
+
+        if st.session_state.get("ocr_text"):
+            st.text_area(
+                "Recognized text (OCR)",
+                value=st.session_state["ocr_text"],
+                height=160,
+                disabled=True,
+                key="ocr_text_display",
+            )
+            image_question = st.text_input(
+                "Your question about this image",
+                placeholder="What is the total amount?",
+                key="image_question",
+            )
+            if st.button(
+                "Answer from image text",
+                disabled=not image_question.strip(),
+                key="ask_image",
+            ):
+                try:
+                    result = answer_image_question(image_question, st.session_state["ocr_text"])
+                    if result["supported"]:
+                        st.success(result["answer"])
+                        st.caption("Answer method: extractive keyword matching over OCR text; no LLM is used.")
+                        with st.expander("Evidence used"):
+                            for passage in result["evidence"]:
+                                st.write(passage)
+                    else:
+                        st.warning(result["answer"])
+                except Exception as exc:
+                    st.error(f"Could not answer from the image text: {exc}")
+    else:
+        st.info("Upload a receipt image to begin.")
 
 st.divider()
 st.caption(
-    "All extraction and retrieval run locally. First-time downloads may be needed for the embedding and OCR models. "
-    "OCR can misread digits; verify totals against the original. This demo is not financial advice."
+    "Local-first demo: PDF text extraction, overlapping chunks, sentence embeddings, ChromaDB retrieval, "
+    "and OCR. OCR can misread digits; verify financial figures against the original. Not financial advice."
 )
