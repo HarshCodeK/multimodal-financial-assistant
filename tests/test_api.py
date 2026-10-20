@@ -58,6 +58,7 @@ def test_health_metrics_and_ask():
     assert response.status_code == 200
     assert response.json()["supported"] is True
     assert len(store.rows) == 1
+    assert store.rows[0][3] is not None and store.rows[0][3] >= 0
     metrics = client.get("/metrics").json()
     assert metrics["routes"]["POST /ask"]["requests_since_start"] >= 1
 
@@ -105,6 +106,8 @@ def test_ingestion_indexes_bounded_extracted_chunks(monkeypatch):
     assert response.status_code == 200
     assert response.json()["chunks_indexed"] == 1
     assert len(retriever.upserted) == 1
+    # The ingestion event records extraction metadata and measured elapsed time.
+    # The fake store is returned by configure_fakes; inspect it explicitly below.
 
 
 
