@@ -25,7 +25,8 @@ class FakeAnswerer:
 
 class FakeStore:
     def __init__(self): self.rows = []
-    def record(self, question, supported, answer, latency_ms=None, extraction_result=None):\n        self.rows.append((question, supported, answer, latency_ms, extraction_result))
+    def record(self, question, supported, answer, latency_ms=None, extraction_result=None):
+        self.rows.append((question, supported, answer, latency_ms, extraction_result))
 
 
 class FakeVisionClient:
