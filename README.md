@@ -37,7 +37,7 @@ The app itself should open without loading the embedding model. The first time y
 4. Inspect the displayed source passages and page numbers.
 5. Upload a receipt image and click **Extract text from image**.
 
-The bundled `data/sample_policy.txt` is also indexed automatically when the local index initializes.
+The bundled `data/sample_policy.txt` is indexed automatically when the local assistant initializes. It is intentionally longer than the compact downloadable PDF and should produce six overlapping chunks with the current 180-word / 35-word-overlap settings. The downloadable PDF may produce one chunk; that is expected for a short document, not evidence that chunking is broken.
 
 ## How it works
 
