@@ -9,31 +9,40 @@ from pathlib import Path
 from dotenv import dotenv_values
 
 
-def groq_key_diagnostics(project_root: str | Path) -> dict:
+def normalize_api_key(value: str | None) -> str:
+    """Trim accidental whitespace and one matching pair of surrounding quotes."""
+    key = (value or "").strip()
+    if len(key) >= 2 and key[0] == key[-1] and key[0] in {"'", '"'}:
+        key = key[1:-1].strip()
+    return key
+
+
+def groq_key_diagnostics(project_root: str | Path, process_env_preexisting: bool = False) -> dict:
     root = Path(project_root)
     env_file = root / ".env"
-    process_key = os.environ.get("GROQ_API_KEY", "")
     file_values = dotenv_values(env_file) if env_file.is_file() else {}
-    file_key = str(file_values.get("GROQ_API_KEY") or "")
-    effective_key = process_key or os.getenv("GROQ_API_KEY", "")
+    file_key = normalize_api_key(str(file_values.get("GROQ_API_KEY") or ""))
+    process_key = normalize_api_key(os.environ.get("GROQ_API_KEY"))
+    effective_key = process_key or file_key
     source = (
         "process environment (takes precedence over .env)"
-        if process_key
+        if process_env_preexisting and process_key
         else ".env file"
-        if file_key
+        if file_key and not process_env_preexisting
+        else "process environment"
+        if process_key
         else "not found"
     )
-    stripped = effective_key.strip()
-    looks_placeholder = not stripped or stripped == "replace_with_your_groq_api_key"
+    looks_placeholder = not effective_key or effective_key == "replace_with_your_groq_api_key"
     return {
         "env_file_exists": env_file.is_file(),
-        "file_has_key": bool(file_key.strip()),
+        "file_has_key": bool(file_key),
         "process_env_has_key": bool(process_key),
         "source": source,
-        "configured": bool(stripped) and not looks_placeholder,
-        "has_outer_whitespace": effective_key != stripped,
+        "configured": bool(effective_key) and not looks_placeholder,
+        "has_outer_whitespace": bool(process_key) and os.environ.get("GROQ_API_KEY") != process_key,
         "looks_placeholder": looks_placeholder,
-        "key_length": len(stripped) if not looks_placeholder else 0,
+        "key_length": len(effective_key) if not looks_placeholder else 0,
     }
 
 
