@@ -69,7 +69,7 @@ Open http://localhost:8501. The first indexing action downloads the embedding mo
 5. Inspect retrieved passages, ChromaDB distances, cited source IDs, and the exact prompt/context sent to Groq.
 6. Ask something absent from the document, such as `What is the international travel allowance?`, and check whether the system abstains instead of guessing.
 
-The sample PDF is fictional and is **not** indexed automatically. The unused bundled `data/sample_policy.txt` is not part of the pipeline. Only an explicit upload and indexing action changes the vector index.
+The sample PDF is fictional and is **not** indexed automatically. No bundled text file is silently indexed. Only an explicit upload and indexing action changes the vector index.
 
 ## What the tools actually do
 
