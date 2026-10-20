@@ -106,7 +106,7 @@ def answer_image_question(question: str, ocr_text: str) -> dict:
         "do", "does", "for", "from", "how", "i", "in", "is", "it", "me", "my",
         "of", "on", "or", "please", "show", "tell", "that", "the", "this", "to",
         "was", "what", "when", "where", "which", "who", "why", "with", "would",
-        "you", "your", "much", "cost", "price", "amount", "total", "value",
+        "you", "your", "much", "value",
     }
     token_pattern = re.compile(r"[a-zA-Z]{2,}|\\d+(?:[.,:/-]\\d+)*")
     aliases = {
