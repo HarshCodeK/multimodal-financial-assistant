@@ -1,12 +1,76 @@
 import json
 import os
+import re
+
 import httpx
 from pydantic import BaseModel, Field
-from .models import RetrievedChunk, Answer
+
+from .models import Answer, RetrievedChunk
+
 
 class _GroundedLLMResponse(BaseModel):
     supported: bool
     answer: str = Field(min_length=1)
+
+
+def _parse_grounded_response(raw: str) -> _GroundedLLMResponse:
+    """Parse provider JSON, with a small, deterministic repair pass for common formatting errors."""
+    candidates = [raw.strip()]
+    # Providers occasionally wrap otherwise valid JSON in Markdown fences.
+    unfenced = re.sub(r"^\s*```(?:json)?\s*|\s*```\s*$", "", raw.strip(), flags=re.IGNORECASE)
+    if unfenced != candidates[0]:
+        candidates.append(unfenced)
+
+    for candidate in candidates:
+        try:
+            return _GroundedLLMResponse.model_validate(json.loads(candidate))
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    # Repair only unambiguous trailing commas before a closing brace/bracket.
+    # Do not invent missing fields or coerce arbitrary prose into an answer.
+    for candidate in candidates:
+        repaired = re.sub(r",\s*([}\]])", r"\1", candidate)
+        try:
+            return _GroundedLLMResponse.model_validate(json.loads(repaired))
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    # Some providers prepend text. Extract the first balanced JSON object while
+    # respecting quoted strings, then apply the same conservative trailing-comma repair.
+    for candidate in candidates:
+        start = candidate.find("{")
+        if start < 0:
+            continue
+        depth = 0
+        in_string = False
+        escaped = False
+        for index in range(start, len(candidate)):
+            char = candidate[index]
+            if in_string:
+                if escaped:
+                    escaped = False
+                elif char == "\\\\":
+                    escaped = True
+                elif char == '"':
+                    in_string = False
+                continue
+            if char == '"':
+                in_string = True
+            elif char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    extracted = candidate[start:index + 1]
+                    repaired = re.sub(r",\s*([}\]])", r"\1", extracted)
+                    try:
+                        return _GroundedLLMResponse.model_validate(json.loads(repaired))
+                    except (json.JSONDecodeError, ValueError):
+                        break
+
+    raise ValueError("Groq returned malformed grounded-answer JSON")
+
 
 class GroqClient:
     def __init__(self, api_key: str | None = None, model: str | None = None, vision_model: str | None = None):
@@ -36,7 +100,7 @@ class GroqClient:
             "response_format": {"type": "json_object"},
         }
         raw = self._request(payload)["choices"][0]["message"]["content"]
-        parsed = _GroundedLLMResponse.model_validate(json.loads(raw))
+        parsed = _parse_grounded_response(raw)
         return Answer(supported=parsed.supported, answer=parsed.answer, sources=evidence if parsed.supported else [])
 
     def describe_image(self, question: str, image_data_url: str) -> str:
