@@ -18,7 +18,7 @@ Run `python -m streamlit run src/financial_assistant/app.py`. Streamlit calls Py
 2. PyMuPDF extracts selectable text page by page. Page numbers are attached to chunks; scanned/image-only PDFs with no text are rejected.
 3. Text is divided into 80-word chunks with 16-word overlap. Chunking is page-local.
 4. `sentence-transformers/all-MiniLM-L6-v2` creates one 384-dimensional vector per chunk. It is pretrained; the PDF does not train or fine-tune it.
-5. ChromaDB persists each chunk's vector, text and source/page metadata in the dedicated `financial_assistant_pdf_rag_v4` collection.
+5. ChromaDB persists each chunk's vector, text and source/page metadata in the dedicated `financial_assistant_pdf_rag_v5` collection. This new collection namespace isolates old v4 persisted content so an old sample index cannot appear as the active index.
 6. A successful indexing operation replaces the previous indexed PDF rather than appending another source. Extraction and embedding happen before the existing collection is cleared.
 
 The UI displays chunk text and boundaries, model name, vector dimensions, and the first few vector values. Individual vector dimensions are not human-readable labels.
@@ -29,7 +29,7 @@ The UI displays chunk text and boundaries, model name, vector dimensions, and th
 2. ChromaDB returns up to five nearest passages and cosine distances.
 3. The generator labels those passages `S1`, `S2`, etc. and sends the question and evidence to the configured Groq-hosted text model (default `openai/gpt-oss-20b`).
 4. The LLM is instructed to use only the evidence, return structured JSON, answer concisely and provide source IDs. The application discards invalid citation IDs and does not mark an answer supported unless the model claims support and cites at least one valid ID.
-5. The UI displays the answer, cited/uncited retrieved passages, source pages, distances, prompt/context, and provider token usage when available.
+5. Before the answer, the UI visibly displays every retrieved passage that was sent to the LLM, with its source filename, page, and cosine distance. Citation IDs show which displayed passages the answer cites. The answer and token usage appear after the evidence; the exact prompt is available in an inspection expander.
 
 These are practical guardrails, not a mathematical guarantee against hallucinations. A model can misinterpret evidence or cite a passage that does not fully justify its answer.
 

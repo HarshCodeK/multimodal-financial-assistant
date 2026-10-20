@@ -64,6 +64,20 @@ def test_embedding_failure_preserves_previous_index(tmp_path):
     assert result[0].text == "Existing policy is still available."
 
 
+def test_clear_index_removes_all_indexed_sources(tmp_path):
+    retriever = ChromaRetriever(str(tmp_path), FakeEmbedder(), collection_name="clear-test")
+    retriever.replace_all([
+        chunk("Meal allowance is 500 INR.", source="old-policy.pdf"),
+        chunk("Hotel allowance is 900 INR.", page=2, source="old-policy.pdf"),
+    ])
+
+    retriever.clear_index()
+
+    assert retriever.collection.count() == 0
+    assert retriever.indexed_sources() == []
+    assert retriever.search("meal allowance") == []
+
+
 def test_empty_collection_returns_no_results(tmp_path):
     retriever = ChromaRetriever(str(tmp_path), FakeEmbedder(), collection_name="empty-test")
     assert retriever.search("meal allowance") == []

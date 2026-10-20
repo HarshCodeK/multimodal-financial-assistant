@@ -17,7 +17,8 @@ This project does **not** train an LLM or embedding model on your PDF or image.
 - **Chunking:** splits each page into 80-word chunks with a 16-word overlap.
 - **Embeddings — Sentence Transformers:** the pretrained `all-MiniLM-L6-v2` model maps each chunk to a 384-dimensional vector. The vector is a learned representation useful for semantic similarity, not a summary.
 - **Vector storage/retrieval — ChromaDB:** stores chunk text, vectors and source/page metadata. The question is embedded with the same model and nearby vectors are retrieved. Cosine distance is a ranking signal, not proof of correctness.
-- **Answer generation — Groq LLM API:** the question and retrieved passages are sent to the configured text model. The model is instructed to answer from the passages and cite source IDs; the app validates citation IDs.
+- **Answer generation — Groq LLM API:** the question and retrieved passages are sent to the configured text model. The model is instructed to answer only from those passages and cite source IDs; the app validates citation IDs and abstains when there is no evidence.
+- **Visible evidence-first answers:** for each question, the UI displays the exact retrieved chunks with source filename, page, and cosine distance before displaying the LLM answer. Citation labels identify which displayed chunks the answer cites.
 - **Inspection and usage accounting:** the UI shows extracted chunks, a sample vector, retrieved passages, distances, citations, prompt/context, provider token usage when available, and estimated API cost based on published token rates.
 - **Local usage ledger:** successful PDF/image questions record model, input/output tokens, latency, approximate request lengths, and estimated USD cost in local SQLite. It never stores API keys or image bytes, but it does store question/answer text.
 
@@ -42,7 +43,8 @@ Ask a question
   → embed the question with the same model
   → retrieve up to five passages
   → send question + retrieved passages to Groq
-  → display answer, citations, source pages, distances and token usage
+  → display the exact selected passages with source/page/distance first
+  → display the LLM answer and its citation IDs, then token usage
 ```
 
 ## Image Q&A pipeline

@@ -110,6 +110,17 @@ def test_question_uses_llm_and_returns_direct_answer_with_citations():
     assert store.rows[0][5]["estimated_cost_usd"] is not None
 
 
+def test_question_passes_only_retrieved_evidence_to_generator():
+    generator = FakeGenerator()
+    assistant, retriever, _ = make_assistant(generator)
+
+    assistant.ask("What is the meal limit?")
+
+    assert generator.evidence == retriever.evidence
+    assert all(source.source == "policy.pdf" for source in generator.evidence)
+    assert all(source.text for source in generator.evidence)
+
+
 def test_question_abstains_when_generator_cannot_support_answer():
     generator = FakeGenerator(supported=False)
     assistant, _, _ = make_assistant(generator)
@@ -146,6 +157,6 @@ def test_default_assistant_does_not_silently_index_bundled_sample_policy(tmp_pat
         assistant = services.create_default_assistant(tmp_path)
 
     retriever_factory.assert_called_once()
-    assert retriever_factory.call_args.kwargs["collection_name"] == "financial_assistant_pdf_rag_v4"
+    assert retriever_factory.call_args.kwargs["collection_name"] == "financial_assistant_pdf_rag_v5"
     assert assistant.indexed_sources() == []
     assert fake_retriever.indexed == []
