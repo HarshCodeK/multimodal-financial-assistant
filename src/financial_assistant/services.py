@@ -156,7 +156,7 @@ def answer_image_question(question: str, ocr_text: str) -> dict:
                 candidates.append((score, len(overlap), combined))
 
     # De-duplicate repeated windows while preserving the strongest first.
-    candidates.sort(key=lambda item: (item[0], item[1], -len(item[2])), reverse=True)
+    candidates.sort(key=lambda item: (item[0], item[1], len(item[2])), reverse=True)
     evidence = []
     seen = set()
     for score, _, passage in candidates:
