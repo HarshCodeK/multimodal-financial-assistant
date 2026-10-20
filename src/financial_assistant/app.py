@@ -67,8 +67,19 @@ with policy_tab:
         try:
             with st.spinner("Embedding your question and searching the local ChromaDB index..."):
                 result = get_assistant().ask(question)
+            st.session_state.setdefault("policy_history", []).append(
+                {"question": question, "result": result}
+            )
+        except Exception as exc:
+            st.error(f"Could not search the documents: {exc}")
+
+    for entry in st.session_state.get("policy_history", []):
+        result = entry["result"]
+        with st.chat_message("user"):
+            st.write(entry["question"])
+        with st.chat_message("assistant"):
             if result.supported and result.sources:
-                st.success("Relevant evidence found. This demo returns source passages rather than generated summaries.")
+                st.write("Relevant evidence found. This demo returns source passages rather than generated summaries.")
                 for index, source in enumerate(result.sources, start=1):
                     label = Path(source.source).name
                     if source.page:
@@ -78,8 +89,6 @@ with policy_tab:
                     st.caption(f"Cosine distance: {source.distance:.3f} (lower is closer)")
             else:
                 st.warning(result.answer)
-        except Exception as exc:
-            st.error(f"Could not search the documents: {exc}")
 
 with receipt_tab:
     st.subheader("Ask about a receipt or statement")
@@ -97,6 +106,7 @@ with receipt_tab:
             st.session_state["ocr_image_digest"] = image_digest
             st.session_state["ocr_text"] = ""
             st.session_state["image_question"] = ""
+            st.session_state["image_history"] = []
         st.image(image, caption="Selected image", use_container_width=True)
 
         if st.button("Read image text", key="read_image"):
@@ -117,7 +127,7 @@ with receipt_tab:
                 value=st.session_state["ocr_text"],
                 height=160,
                 disabled=True,
-                key="ocr_text_display",
+                key=f"ocr_text_display_{image_digest[:12]}",
             )
             image_question = st.text_input(
                 "Your question about this image",
@@ -131,16 +141,25 @@ with receipt_tab:
             ):
                 try:
                     result = answer_image_question(image_question, st.session_state["ocr_text"])
+                    st.session_state.setdefault("image_history", []).append(
+                        {"question": image_question, "result": result}
+                    )
+                except Exception as exc:
+                    st.error(f"Could not answer from the image text: {exc}")
+
+            for entry in st.session_state.get("image_history", []):
+                result = entry["result"]
+                with st.chat_message("user"):
+                    st.write(entry["question"])
+                with st.chat_message("assistant"):
                     if result["supported"]:
-                        st.success(result["answer"])
-                        st.caption("Answer method: extractive keyword matching over OCR text; no LLM is used.")
+                        st.write(result["answer"])
+                        st.caption("Answer method: extractive matching over OCR text; no LLM is used.")
                         with st.expander("Evidence used"):
                             for passage in result["evidence"]:
                                 st.write(passage)
                     else:
                         st.warning(result["answer"])
-                except Exception as exc:
-                    st.error(f"Could not answer from the image text: {exc}")
     else:
         st.info("Upload a receipt image to begin.")
 
