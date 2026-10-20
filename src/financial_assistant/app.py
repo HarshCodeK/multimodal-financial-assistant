@@ -234,7 +234,7 @@ with image_tab:
             help="The image is sent to Groq for visual analysis when you click Analyze image.",
         )
         if uploaded_image is not None:
-            st.image(uploaded_image, caption=uploaded_image.name, use_container_width=True)
+            st.image(uploaded_image.getvalue(), caption=uploaded_image.name, use_container_width=True)
     with question_col:
         image_question = st.text_area(
             "What do you want to know about this image?",
