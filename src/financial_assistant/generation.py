@@ -46,6 +46,7 @@ class GroundedAnswerGenerator:
                 "completion_tokens": None,
                 "context_word_count": 0,
                 "context_token_estimate": 0,
+                "prompt_preview": "",
             }
 
         evidence_text, references = self._evidence(chunks)
@@ -102,15 +103,19 @@ class GroundedAnswerGenerator:
             valid_ids = []
 
         usage = getattr(response, "usage", None)
+        prompt_preview = (
+            "SYSTEM INSTRUCTIONS:\n" + system_prompt + "\n\nUSER MESSAGE:\n" + user_prompt
+        )
         return {
             "supported": supported,
             "answer": answer_text.strip(),
             "citations": valid_ids,
-            "sources": [references[source_id] for source_id in valid_ids],
+            # Keep all retrieved chunks visible for auditing; citations identify which ones the LLM selected.
+            "sources": chunks,
             "model": self.model,
             "prompt_tokens": getattr(usage, "prompt_tokens", None),
             "completion_tokens": getattr(usage, "completion_tokens", None),
             "context_word_count": word_count,
             "context_token_estimate": context_token_estimate,
-            "prompt_preview": user_prompt,
+            "prompt_preview": prompt_preview,
         }
