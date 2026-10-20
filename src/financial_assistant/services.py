@@ -91,7 +91,7 @@ class FinancialAssistant:
 
 
 def answer_image_question(question: str, ocr_text: str) -> dict:
-    """Select question-relevant OCR lines with lexical matching; no LLM is used."""
+    """Select relevant OCR line windows using transparent lexical matching; no LLM is used."""
     if not isinstance(question, str) or not question.strip():
         raise ValueError("Enter a question about the image.")
     if not isinstance(ocr_text, str) or not ocr_text.strip():
@@ -106,43 +106,77 @@ def answer_image_question(question: str, ocr_text: str) -> dict:
         "do", "does", "for", "from", "how", "i", "in", "is", "it", "me", "my",
         "of", "on", "or", "please", "show", "tell", "that", "the", "this", "to",
         "was", "what", "when", "where", "which", "who", "why", "with", "would",
-        "you", "your",
+        "you", "your", "much", "cost", "price", "amount", "total", "value",
     }
-    token_pattern = re.compile(r"[a-zA-Z]{2,}|\d+(?:[.,:/-]\d+)*")
+    token_pattern = re.compile(r"[a-zA-Z]{2,}|\\d+(?:[.,:/-]\\d+)*")
+    aliases = {
+        "price": {"price", "cost", "amount", "total", "inr", "rs", "rupees", "₹"},
+        "cost": {"price", "cost", "amount", "total", "inr", "rs", "rupees", "₹"},
+        "amount": {"price", "cost", "amount", "total", "inr", "rs", "rupees", "₹"},
+        "total": {"price", "cost", "amount", "total", "inr", "rs", "rupees", "₹"},
+        "robotics": {"robotics", "robot", "kit"},
+        "kit": {"kit", "product", "item"},
+        "product": {"product", "item", "kit"},
+        "item": {"product", "item", "kit"},
+        "date": {"date", "dated", "day"},
+        "merchant": {"merchant", "store", "seller", "shop"},
+    }
 
     def terms(value: str) -> set[str]:
-        return {
+        found = {
             token.lower().strip(".,:/-")
             for token in token_pattern.findall(value)
             if token.lower() not in stopwords
         }
+        expanded = set(found)
+        for token in found:
+            expanded.update(aliases.get(token, set()))
+        return expanded
 
     query_terms = terms(question)
+    # For generic price questions, avoid requiring a literal word such as "price"
+    # to appear on the receipt; the product name and adjacent amount line may be enough.
     if not query_terms:
         return {"supported": False, "answer": "Please ask a more specific question.", "evidence": []}
 
+    lines = [line.strip() for line in re.split(r"[\\r\\n]+|(?<=[.!?])\\s+", ocr_text) if line.strip()]
     candidates = []
-    for line in re.split(r"[\r\n]+|(?<=[.!?])\s+", ocr_text):
-        line = line.strip()
-        line_terms = terms(line)
-        overlap = query_terms & line_terms
-        if line and overlap:
-            score = len(overlap) / len(query_terms)
-            candidates.append((score, len(overlap), line))
+    # Receipt OCR often puts an item name and its price on adjacent lines.
+    # Score windows of up to three lines so a product line can be paired with its amount.
+    for index in range(len(lines)):
+        for width in (1, 2, 3):
+            window = lines[index:index + width]
+            if not window:
+                continue
+            combined = " | ".join(window)
+            line_terms = terms(combined)
+            overlap = query_terms & line_terms
+            if overlap:
+                score = len(overlap) / len(query_terms)
+                candidates.append((score, len(overlap), combined))
 
+    # De-duplicate repeated windows while preserving the strongest first.
     candidates.sort(key=lambda item: (item[0], item[1], -len(item[2])), reverse=True)
-    if not candidates or candidates[0][0] < 0.25:
+    evidence = []
+    seen = set()
+    for score, _, passage in candidates:
+        if score < 0.20 or passage in seen:
+            continue
+        seen.add(passage)
+        evidence.append(passage)
+        if len(evidence) == 3:
+            break
+
+    if not evidence:
         return {
             "supported": False,
-            "answer": "I couldn't find text in this image that clearly answers that question. Check the OCR text or try a more specific question.",
+            "answer": "I couldn't find text in this image that clearly answers that question. Review the recognized OCR text; the image may be blurry or the item and price may have been read incorrectly.",
             "evidence": [],
         }
 
-    best_score = candidates[0][0]
-    evidence = [line for score, _, line in candidates[:3] if score >= max(0.25, best_score * 0.6)]
     return {
         "supported": True,
-        "answer": "Relevant text recognized in the image:\\n" + "\\n".join(evidence),
+        "answer": "Relevant text recognized in the image (extractive match, not a verified calculation):\\n" + "\\n".join(evidence),
         "evidence": evidence,
     }
 
