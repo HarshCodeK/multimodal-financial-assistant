@@ -2,7 +2,7 @@ from pathlib import Path
 import base64
 import io
 
-import fitz
+import pymupdf
 from PIL import Image
 
 from .models import DocumentChunk, SourceType
@@ -27,7 +27,7 @@ def extract_pdf_bytes(raw: bytes, source_name: str) -> list[DocumentChunk]:
     chunks: list[DocumentChunk] = []
     remaining_chars = MAX_TOTAL_EXTRACTED_CHARS
     try:
-        with fitz.open(stream=raw, filetype="pdf") as doc:
+        with pymupdf.open(stream=raw, filetype="pdf") as doc:
             if len(doc) > MAX_PDF_PAGES:
                 raise ValueError(f"PDF has more than {MAX_PDF_PAGES} pages")
             for page_number, page in enumerate(doc, start=1):
@@ -38,7 +38,7 @@ def extract_pdf_bytes(raw: bytes, source_name: str) -> list[DocumentChunk]:
                 if text:
                     chunks.append(DocumentChunk(source=source_name, source_type=SourceType.pdf, text=text, page=page_number))
                     remaining_chars -= len(text)
-    except (fitz.FileDataError, fitz.EmptyFileError) as exc:
+    except (pymupdf.FileDataError, pymupdf.EmptyFileError) as exc:
         raise ValueError("PDF could not be opened") from exc
     return chunks
 
@@ -48,6 +48,9 @@ def validate_image(path: str | Path) -> Image.Image:
     if len(raw) > MAX_IMAGE_BYTES:
         raise ValueError("image is larger than the 8 MiB limit")
     image = Image.open(io.BytesIO(raw))
+    width, height = image.size
+    if width <= 0 or height <= 0 or width * height > 20_000_000:
+        raise ValueError("image dimensions exceed the supported pixel limit")
     image.verify()
     return Image.open(io.BytesIO(raw)).convert("RGB")
 
@@ -56,6 +59,9 @@ def image_bytes_as_data_url(raw: bytes) -> str:
     if len(raw) > MAX_IMAGE_BYTES:
         raise ValueError("image is larger than the 8 MiB limit")
     image = Image.open(io.BytesIO(raw))
+    width, height = image.size
+    if width <= 0 or height <= 0 or width * height > 20_000_000:
+        raise ValueError("image dimensions exceed the supported pixel limit")
     image.verify()
     image = Image.open(io.BytesIO(raw)).convert("RGB")
     buffer = io.BytesIO()
