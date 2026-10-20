@@ -43,6 +43,16 @@ def submit_question():
 
 with st.sidebar:
     st.header("1. Choose the source")
+    sample_pdf_path = PROJECT_ROOT / "data" / "sample_financial_policy.pdf"
+    if sample_pdf_path.exists():
+        st.download_button(
+            "Download fictional sample PDF",
+            data=sample_pdf_path.read_bytes(),
+            file_name="sample_financial_policy.pdf",
+            mime="application/pdf",
+            use_container_width=True,
+        )
+        st.caption("Downloading the sample does not index it. Upload the PDF below and click the indexing button.")
     uploaded_pdf = st.file_uploader(
         "Upload a text-based PDF",
         type=["pdf"],
