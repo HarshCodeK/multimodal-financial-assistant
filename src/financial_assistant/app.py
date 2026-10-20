@@ -36,8 +36,8 @@ with policy_tab:
             mime="application/pdf",
         )
         st.caption(
-            "This compact PDF may produce one chunk. The built-in sample_policy.txt is longer and is indexed "
-            "automatically as multiple overlapping chunks, so you can test retrieval even before uploading a PDF."
+            "This sample PDF should now split into smaller chunks. Very short documents can still produce one chunk; "
+            "the longer built-in sample_policy.txt is indexed automatically for multi-chunk retrieval tests."
         )
 
     policy_pdf = st.file_uploader(
