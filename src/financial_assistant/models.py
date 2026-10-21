@@ -6,6 +6,7 @@ from enum import Enum
 
 class SourceType(str, Enum):
     pdf = "pdf"
+    image = "image"
 
 
 @dataclass(frozen=True)
