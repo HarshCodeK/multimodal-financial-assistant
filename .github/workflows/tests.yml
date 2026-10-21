@@ -16,7 +16,8 @@ jobs:
           python-version: "3.12"
           cache: pip
       - name: Install test dependencies
-        run: python -m pip install --upgrade pip pytest PyMuPDF chromadb
+        run: python -m pip install --upgrade pip
+          python -m pip install -e ".[test]"
       - name: Compile Python source
         run: python -m compileall -q src tests
       - name: Run unit tests
