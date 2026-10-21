@@ -289,6 +289,7 @@ with image_tab:
         if analyze_clicked and uploaded_image is not None:
             started = perf_counter()
             st.session_state.pop("image_error", None)
+            st.session_state.pop("last_image_result", None)
             try:
                 with st.spinner("Reading text locally from the image..."):
                     ocr_result = extract_image_text(uploaded_image.getvalue(), uploaded_image.name)
