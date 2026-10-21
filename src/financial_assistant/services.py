@@ -46,8 +46,7 @@ class FinancialAssistant:
         chunks = extract_pdf_bytes(raw, source_name=safe_name)
         if not chunks:
             raise ValueError(
-                "No selectable text was found in this PDF. This simple version does not run OCR; "
-                "use a text-based PDF or OCR it before uploading."
+                "No readable text was found in this PDF, even after local OCR. Try a clearer PDF or OCR the file separately."
             )
 
         # Embed first and replace the old collection only after extraction and embedding succeed.
