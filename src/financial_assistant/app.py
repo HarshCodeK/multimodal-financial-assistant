@@ -290,9 +290,11 @@ with image_tab:
             started = perf_counter()
             st.session_state.pop("image_error", None)
             st.session_state.pop("last_image_result", None)
+            ocr_complete = False
             try:
                 with st.spinner("Reading text locally from the image..."):
                     ocr_result = extract_image_text(uploaded_image.getvalue(), uploaded_image.name)
+                ocr_complete = True
                 st.session_state["last_image_result"] = {
                     "filename": uploaded_image.name,
                     "question": image_question.strip(),
@@ -332,7 +334,10 @@ with image_tab:
                     input_bytes=len(uploaded_image.getvalue()),
                 )
             except Exception as exc:
-                st.session_state["image_error"] = friendly_groq_error(exc, "OCR image answer")
+                if ocr_complete:
+                    st.session_state["image_error"] = friendly_groq_error(exc, "OCR image answer")
+                else:
+                    st.session_state["image_error"] = f"Local OCR failed: {exc}"
     if st.session_state.get("image_error"):
         st.error(st.session_state["image_error"])
         st.caption("If OCR text was extracted, it remains visible below even if Groq answer generation failed.")
