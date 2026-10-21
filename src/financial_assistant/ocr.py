@@ -41,7 +41,7 @@ def _get_ocr_engine():
     except ImportError as exc:
         raise RuntimeError(
             "Local OCR is unavailable. Install the project dependencies with "
-            "'python -m pip install -e ".[test]"', then restart Streamlit."
+            "the documented install command, then restart Streamlit."
         ) from exc
     return RapidOCR()
 
