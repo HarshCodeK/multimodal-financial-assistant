@@ -312,11 +312,16 @@ with image_tab:
             analyze_clicked = st.form_submit_button(
                 "Ask",
                 type="primary",
-                disabled=uploaded_image is None or not image_question.strip(),
+                # Form fields do not trigger a rerun while typing, so disabling this
+                # button based on image_question would leave it stuck disabled.
+                disabled=uploaded_image is None,
                 use_container_width=True,
             )
 
-        if analyze_clicked and uploaded_image is not None and image_bytes is not None:
+        if analyze_clicked and uploaded_image is not None and image_bytes is not None and not image_question.strip():
+            st.warning("Enter a question about the image before clicking Ask.")
+
+        if analyze_clicked and uploaded_image is not None and image_bytes is not None and image_question.strip():
             question = image_question.strip()
             started = perf_counter()
             st.session_state.pop("image_error", None)
