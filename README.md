@@ -45,14 +45,14 @@ python -m streamlit run src/financial_assistant/app.py
 5. Sentence Transformers `all-MiniLM-L6-v2` generates 384-dimensional vectors; ChromaDB stores chunks, vectors, and source/page metadata locally.
 6. Ask a question. Up to five retrieved passages are sent with the question to GPT-OSS-20B. The UI shows the exact evidence and citation IDs before the answer.
 
-A successful new indexing operation replaces the previous PDF index. The bundled fictional sample is never indexed automatically.
+A successful new indexing operation replaces the previous PDF index. The bundled fictional sample is never indexed automatically. ChromaDB persists locally across restarts, but a saved index from an earlier session is not presented as the current-session upload; upload and index a PDF to activate PDF Q&A in a new session.
 
 ## Image OCR + text LLM
 
 1. Open **OCR image Q&A** and upload a PNG, JPEG, or WebP image (up to 5 MiB).
-2. Click **Run local OCR and answer**.
-3. OCR runs on your computer using RapidOCR. Its extracted text and an approximate confidence indicator are displayed.
-4. Only the question and extracted text are sent to Groq's `openai/gpt-oss-20b` text endpoint. The image bytes are not included in the API request.
+2. OCR runs on your computer using RapidOCR once for the uploaded image. Its extracted text and an approximate confidence indicator are displayed and cached for the current Streamlit session.
+3. Ask one question at a time and press **Enter** or click **Ask**. Each answer reuses the cached OCR text, so additional questions do not rerun OCR. Uploading a different image invalidates the cache and starts a fresh question history.
+4. Only each question and the extracted text are sent to Groq's `openai/gpt-oss-20b` text endpoint. The image bytes are not included in the API request.
 5. Verify the OCR output against the image, especially financial amounts, dates, and identifiers.
 
 OCR is suitable for legible text in receipts, forms, statements, and screenshots. It does not understand charts, visual relationships, or layouts the way a vision model can, and handwriting/blurry images can be misread. If OCR finds no readable text, the app asks for a clearer image rather than guessing.
