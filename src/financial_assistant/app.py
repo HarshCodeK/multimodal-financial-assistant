@@ -386,11 +386,32 @@ with image_tab:
                     st.session_state["image_error"] = friendly_groq_error(exc, "OCR image answer")
                 else:
                     st.session_state["image_error"] = f"Local OCR failed: {exc}"
-    if st.session_state.get("image_error"):
-        st.error(st.session_state["image_error"])
-        if st.session_state.get("image_ocr_cache"):
-            st.caption("OCR text is cached locally and can be reused for another question.")
 
+        if st.session_state.get("image_error"):
+            st.error(st.session_state["image_error"])
+            if st.session_state.get("image_ocr_cache"):
+                st.caption("OCR text is cached locally and can be reused for another question.")
+
+        for image_result in st.session_state.get("image_question_history", []):
+            st.markdown(f"**Question:** {image_result['question']}")
+            st.markdown("### GPT-OSS-20B answer")
+            if image_result.get("supported"):
+                st.write(image_result["answer"])
+                if image_result.get("citations"):
+                    st.caption("Grounded in extracted text: " + ", ".join(
+                        f"[{item}]" for item in image_result["citations"]
+                    ))
+            else:
+                st.warning(image_result["answer"])
+            stats = [f"Model: {image_result.get('model', 'openai/gpt-oss-20b')}"]
+            if image_result.get("prompt_tokens") is not None:
+                stats.append(f"input tokens: {image_result['prompt_tokens']}")
+            if image_result.get("completion_tokens") is not None:
+                stats.append(f"output tokens: {image_result['completion_tokens']}")
+            if image_result.get("latency_ms") is not None:
+                stats.append(f"answer time: {image_result['latency_ms']:.0f} ms")
+            st.caption(" · ".join(stats))
+            st.warning("OCR can misread amounts, dates, and identifiers. Verify the extracted text against the original image.")
     image_ocr_cache = st.session_state.get("image_ocr_cache")
     if image_ocr_cache and image_ocr_cache.get("fingerprint") == image_fingerprint:
         st.divider()
@@ -402,27 +423,6 @@ with image_tab:
                 f"Mean OCR confidence: {image_ocr_cache['mean_confidence']:.0%} "
                 "(estimate, not a correctness guarantee)"
             )
-
-    for image_result in st.session_state.get("image_question_history", []):
-        st.markdown(f"**Question:** {image_result['question']}")
-        st.markdown("### GPT-OSS-20B answer")
-        if image_result.get("supported"):
-            st.write(image_result["answer"])
-            if image_result.get("citations"):
-                st.caption("Grounded in extracted text: " + ", ".join(
-                    f"[{item}]" for item in image_result["citations"]
-                ))
-        else:
-            st.warning(image_result["answer"])
-        stats = [f"Model: {image_result.get('model', 'openai/gpt-oss-20b')}"]
-        if image_result.get("prompt_tokens") is not None:
-            stats.append(f"input tokens: {image_result['prompt_tokens']}")
-        if image_result.get("completion_tokens") is not None:
-            stats.append(f"output tokens: {image_result['completion_tokens']}")
-        if image_result.get("latency_ms") is not None:
-            stats.append(f"answer time: {image_result['latency_ms']:.0f} ms")
-        st.caption(" · ".join(stats))
-        st.warning("OCR can misread amounts, dates, and identifiers. Verify the extracted text against the original image.")
 
 with st.expander("Local usage and estimated-cost log"):
     st.caption(
