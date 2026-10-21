@@ -12,18 +12,18 @@ def test_diagnostics_report_env_file_without_revealing_key(tmp_path, monkeypatch
     status = groq_key_diagnostics(tmp_path, process_env_preexisting=False)
 
     assert status["configured"] is True
-    assert status["source"] == ".env file"
+    assert status["source"] == "project-root .env file (takes precedence)"
     assert status["key_length"] == len("gsk-super-secret")
     assert "gsk-super-secret" not in str(status)
 
 
-def test_stale_process_environment_takes_precedence_and_is_reported(tmp_path, monkeypatch):
+def test_project_env_takes_precedence_over_stale_process_environment(tmp_path, monkeypatch):
     monkeypatch.setenv("GROQ_API_KEY", "stale-invalid-key")
     (tmp_path / ".env").write_text("GROQ_API_KEY=gsk-valid-file-key\n", encoding="utf-8")
 
     status = groq_key_diagnostics(tmp_path, process_env_preexisting=True)
 
-    assert status["source"] == "process environment (takes precedence over .env)"
+    assert status["source"] == "project-root .env file (takes precedence)"
     assert status["configured"] is True
     assert "stale-invalid-key" not in str(status)
 
@@ -36,5 +36,5 @@ def test_invalid_key_error_is_actionable_and_does_not_echo_secret():
     error = friendly_groq_error(FakeAuthError("invalid_api_key: do not echo gsk-secret"), "PDF answer")
 
     assert "HTTP 401" in error
-    assert "Windows/user/system" in error
+    assert "Windows environment variables" in error
     assert "gsk-secret" not in error
