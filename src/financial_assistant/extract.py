@@ -56,14 +56,16 @@ def extract_pdf_bytes(raw: bytes, source_name: str) -> list[DocumentChunk]:
                 if extracted_total >= MAX_TOTAL_EXTRACTED_CHARS:
                     break
                 text = " ".join(page.get_text("text").split())
-                if not text:
-                    # OCR only pages without selectable text; page images remain local.
+                if not text and page.get_images(full=True):
+                    # OCR only image-only pages; blank pages do not trigger OCR model loading.
                     pixmap = page.get_pixmap(matrix=pymupdf.Matrix(2, 2), alpha=False)
                     try:
                         text = " ".join(extract_image_text(pixmap.tobytes("png"), source_name)["text"].split())
                     except ValueError:
-                        # A blank or unreadable page contributes no chunks.
+                        # An unreadable image page contributes no chunks.
                         continue
+                if not text:
+                    continue
                 remaining = MAX_TOTAL_EXTRACTED_CHARS - extracted_total
                 text = text[:remaining]
                 chunks.extend(
