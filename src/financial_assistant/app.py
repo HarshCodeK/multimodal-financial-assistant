@@ -1,5 +1,6 @@
 """Streamlit UI for PDF RAG and local-OCR image question answering."""
 
+import hashlib
 import json
 import os
 import sys
@@ -96,6 +97,7 @@ with pdf_tab:
                 with st.spinner("Extracting text, creating chunks and embeddings, then replacing the current index..."):
                     summary = get_assistant().index_pdf(uploaded_pdf.name, uploaded_pdf.getvalue())
                 st.session_state["last_index_result"] = summary
+                st.session_state["pdf_indexed_this_session"] = True
                 st.session_state["chat_history"] = []
                 st.success(
                     f"Indexed {summary['chunks_indexed']} chunks from {summary['pages_extracted']} pages. "
@@ -118,18 +120,35 @@ with pdf_tab:
         st.caption("No bundled document is indexed automatically.")
 
     assistant = get_assistant()
-    indexed_sources = assistant.indexed_sources()
-    if indexed_sources:
-        st.success("Currently indexed PDF: " + ", ".join(indexed_sources))
-        if st.button("Clear indexed PDF", help="Permanently remove the current local PDF index from ChromaDB. This does not delete your original PDF file."):
+    persisted_sources = assistant.indexed_sources()
+    indexed_this_session = bool(st.session_state.get("pdf_indexed_this_session"))
+    active_sources = persisted_sources if indexed_this_session else []
+
+    if indexed_this_session and persisted_sources:
+        current_name = st.session_state.get("last_index_result", {}).get("source")
+        st.success("PDF indexed in this session: " + (current_name or ", ".join(persisted_sources)))
+    elif persisted_sources:
+        st.info(
+            "A saved local PDF index exists from an earlier session, but no PDF has been uploaded and indexed "
+            "in this session. It will not be treated as your current upload. Upload and index a PDF to activate "
+            "the PDF Q&A workflow."
+        )
+    else:
+        st.info("No PDF has been uploaded and indexed in this session.")
+
+    if persisted_sources:
+        clear_label = "Clear PDF index" if indexed_this_session else "Clear saved PDF index"
+        if st.button(
+            clear_label,
+            help="Permanently remove the local PDF index from ChromaDB. This does not delete your original PDF file.",
+        ):
             assistant.clear_index()
             st.session_state.pop("last_index_result", None)
+            st.session_state.pop("pdf_indexed_this_session", None)
             st.session_state["chat_history"] = []
             st.rerun()
-    else:
-        st.info("No PDF is indexed yet. Upload a PDF above and click the indexing button.")
 
-    summary = st.session_state.get("last_index_result")
+    summary = st.session_state.get("last_index_result") if indexed_this_session else None
     if summary:
         st.subheader("Indexing report")
         c1, c2, c3, c4 = st.columns(4)
@@ -237,9 +256,9 @@ with pdf_tab:
             "Ask a question",
             placeholder="What is the maximum meal reimbursement?",
             key="question_input",
-            disabled=not bool(indexed_sources),
+            disabled=not bool(active_sources),
         )
-        st.form_submit_button("Ask", on_click=submit_question, disabled=not bool(indexed_sources))
+        st.form_submit_button("Ask", on_click=submit_question, disabled=not bool(active_sources))
 
     with st.expander("How token savings work (and what this demo measures)"):
         st.markdown(
