@@ -35,7 +35,10 @@ def test_pdf_extraction_preserves_page_numbers(tmp_path):
 
 def test_image_only_pdf_uses_local_ocr_fallback_and_skips_unreadable_page():
     doc = pymupdf.open()
-    doc.new_page()
+    page = doc.new_page()
+    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 8, 8), False)
+    pix.clear_with(255)
+    page.insert_image(pymupdf.Rect(72, 72, 160, 160), pixmap=pix)
     raw = doc.tobytes()
     doc.close()
 
