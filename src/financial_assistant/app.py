@@ -302,7 +302,7 @@ with image_tab:
             st.image(image_bytes, caption=uploaded_image.name, use_container_width=True)
 
     with question_col:
-        with st.form("image_question_form", clear_on_submit=True):
+        with st.form("image_question_form", clear_on_submit=False):
             image_question = st.text_input(
                 "Ask a question about this image",
                 placeholder="What is the total amount?",
@@ -325,6 +325,9 @@ with image_tab:
             question = image_question.strip()
             started = perf_counter()
             st.session_state.pop("image_error", None)
+            # Keep error classification safe if an unexpected exception occurs
+            # before the OCR cache has been checked.
+            ocr_complete = False
             try:
                 cached_ocr = st.session_state.get("image_ocr_cache")
                 ocr_complete = bool(cached_ocr and cached_ocr.get("fingerprint") == image_fingerprint)
