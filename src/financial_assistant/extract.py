@@ -40,7 +40,7 @@ def extract_pdf(path: str | Path) -> list[DocumentChunk]:
 
 
 def extract_pdf_bytes(raw: bytes, source_name: str) -> list[DocumentChunk]:
-    """Extract selectable text page-by-page. Scanned/image-only PDFs need OCR and are rejected."""
+    """Extract selectable text and locally OCR image-only pages when readable text is absent."""
     if not raw or len(raw) > MAX_PDF_BYTES:
         raise ValueError("PDF is empty or larger than the 10 MiB limit")
     if not raw.startswith(b"%PDF-"):
