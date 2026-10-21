@@ -24,6 +24,7 @@ from financial_assistant.costing import DEFAULT_TEXT_RATES, token_cost_usd
 from financial_assistant.diagnostics import friendly_groq_error, groq_key_diagnostics
 from financial_assistant.ocr import answer_ocr_text, extract_image_text
 from financial_assistant.services import create_default_assistant
+from financial_assistant.ui_state import active_pdf_sources, get_or_extract_image_text, image_fingerprint as get_image_fingerprint
 
 st.set_page_config(page_title="Financial Assistant", page_icon="📄", layout="wide")
 st.title("Financial Assistant")
@@ -96,6 +97,7 @@ with pdf_tab:
                 with st.spinner("Extracting text, creating chunks and embeddings, then replacing the current index..."):
                     summary = get_assistant().index_pdf(uploaded_pdf.name, uploaded_pdf.getvalue())
                 st.session_state["last_index_result"] = summary
+                st.session_state["pdf_indexed_this_session"] = True
                 st.session_state["chat_history"] = []
                 st.success(
                     f"Indexed {summary['chunks_indexed']} chunks from {summary['pages_extracted']} pages. "
@@ -118,18 +120,35 @@ with pdf_tab:
         st.caption("No bundled document is indexed automatically.")
 
     assistant = get_assistant()
-    indexed_sources = assistant.indexed_sources()
-    if indexed_sources:
-        st.success("Currently indexed PDF: " + ", ".join(indexed_sources))
-        if st.button("Clear indexed PDF", help="Permanently remove the current local PDF index from ChromaDB. This does not delete your original PDF file."):
+    persisted_sources = assistant.indexed_sources()
+    indexed_this_session = bool(st.session_state.get("pdf_indexed_this_session"))
+    active_sources = active_pdf_sources(persisted_sources, indexed_this_session)
+
+    if indexed_this_session and persisted_sources:
+        current_name = st.session_state.get("last_index_result", {}).get("source")
+        st.success("PDF indexed in this session: " + (current_name or ", ".join(persisted_sources)))
+    elif persisted_sources:
+        st.info(
+            "A saved local PDF index exists from an earlier session, but no PDF has been uploaded and indexed "
+            "in this session. It will not be treated as your current upload. Upload and index a PDF to activate "
+            "the PDF Q&A workflow."
+        )
+    else:
+        st.info("No PDF has been uploaded and indexed in this session.")
+
+    if persisted_sources:
+        clear_label = "Clear PDF index" if indexed_this_session else "Clear saved PDF index"
+        if st.button(
+            clear_label,
+            help="Permanently remove the local PDF index from ChromaDB. This does not delete your original PDF file.",
+        ):
             assistant.clear_index()
             st.session_state.pop("last_index_result", None)
+            st.session_state.pop("pdf_indexed_this_session", None)
             st.session_state["chat_history"] = []
             st.rerun()
-    else:
-        st.info("No PDF is indexed yet. Upload a PDF above and click the indexing button.")
 
-    summary = st.session_state.get("last_index_result")
+    summary = st.session_state.get("last_index_result") if indexed_this_session else None
     if summary:
         st.subheader("Indexing report")
         c1, c2, c3, c4 = st.columns(4)
@@ -237,9 +256,9 @@ with pdf_tab:
             "Ask a question",
             placeholder="What is the maximum meal reimbursement?",
             key="question_input",
-            disabled=not bool(indexed_sources),
+            disabled=not bool(active_sources),
         )
-        st.form_submit_button("Ask", on_click=submit_question, disabled=not bool(indexed_sources))
+        st.form_submit_button("Ask", on_click=submit_question, disabled=not bool(active_sources))
 
     with st.expander("How token savings work (and what this demo measures)"):
         st.markdown(
@@ -257,11 +276,11 @@ with pdf_tab:
     )
 
 with image_tab:
-    st.subheader("Ask a question about text in an image")
+    st.subheader("Ask questions about text in an image")
     st.write(
-        "OCR runs locally on your computer. Review the extracted text before the question and extracted text are sent "
-        "to Groq's openai/gpt-oss-20b text model. The raw image is never sent to Groq and is not added to ChromaDB. "
-        "This text-only workflow cannot reliably interpret charts or visual layouts."
+        "OCR runs locally once per uploaded image. The extracted text is reused for every question about that image. "
+        "Only the question and extracted text are sent to Groq's openai/gpt-oss-20b text model; raw image bytes are "
+        "never sent to Groq or added to ChromaDB. This text-only workflow cannot reliably interpret charts or visual layouts."
     )
     image_col, question_col = st.columns([1, 1], gap="large")
     with image_col:
@@ -269,46 +288,67 @@ with image_tab:
             "Choose an image (PNG, JPEG, or WebP; max 5 MiB)",
             type=["png", "jpg", "jpeg", "webp"],
             key="image_upload_main",
-            help="The image is processed locally by OCR. Only extracted text and your question are sent to Groq.",
+            help="OCR is local. Only extracted text and each question are sent to Groq.",
         )
+        image_bytes = uploaded_image.getvalue() if uploaded_image is not None else None
+        image_fingerprint = get_image_fingerprint(image_bytes) if image_bytes else None
+        previous_fingerprint = st.session_state.get("image_ocr_fingerprint")
+        if previous_fingerprint != image_fingerprint:
+            st.session_state["image_ocr_fingerprint"] = image_fingerprint
+            st.session_state.pop("image_ocr_cache", None)
+            st.session_state["image_question_history"] = []
+            st.session_state.pop("image_error", None)
         if uploaded_image is not None:
-            st.image(uploaded_image.getvalue(), caption=uploaded_image.name, use_container_width=True)
+            st.image(image_bytes, caption=uploaded_image.name, use_container_width=True)
+
     with question_col:
-        image_question = st.text_area(
-            "What do you want to know about the extracted text?",
-            placeholder="What is the total amount and transaction date?",
-            key="image_question",
-            height=120,
-        )
-        analyze_clicked = st.button(
-            "Run local OCR and answer",
-            type="primary",
-            disabled=uploaded_image is None or not image_question.strip(),
-            use_container_width=True,
-        )
-        if analyze_clicked and uploaded_image is not None:
+        with st.form("image_question_form", clear_on_submit=True):
+            image_question = st.text_input(
+                "Ask a question about this image",
+                placeholder="What is the total amount?",
+                key="image_question_input",
+                disabled=uploaded_image is None,
+            )
+            analyze_clicked = st.form_submit_button(
+                "Ask",
+                type="primary",
+                disabled=uploaded_image is None or not image_question.strip(),
+                use_container_width=True,
+            )
+
+        if analyze_clicked and uploaded_image is not None and image_bytes is not None:
+            question = image_question.strip()
             started = perf_counter()
             st.session_state.pop("image_error", None)
-            st.session_state.pop("last_image_result", None)
-            ocr_complete = False
             try:
-                with st.spinner("Reading text locally from the image..."):
-                    ocr_result = extract_image_text(uploaded_image.getvalue(), uploaded_image.name)
-                ocr_complete = True
-                st.session_state["last_image_result"] = {
-                    "filename": uploaded_image.name,
-                    "question": image_question.strip(),
-                    "ocr_text": ocr_result["text"],
-                    "ocr_confidence": ocr_result["mean_confidence"],
-                }
-                with st.spinner("Sending only the question and extracted text to GPT-OSS-20B..."):
+                cached_ocr = st.session_state.get("image_ocr_cache")
+                ocr_complete = bool(cached_ocr and cached_ocr.get("fingerprint") == image_fingerprint)
+                if not ocr_complete:
+                    with st.spinner("Running local OCR for this image..."):
+                        cached_ocr = get_or_extract_image_text(
+                            st.session_state, image_bytes, uploaded_image.name, extract_image_text
+                        )
+                    ocr_complete = True
+                else:
+                    cached_ocr = get_or_extract_image_text(
+                        st.session_state, image_bytes, uploaded_image.name, extract_image_text
+                    )
+
+                with st.spinner("Answering from the cached OCR text..."):
                     answer_result = answer_ocr_text(
-                        image_question,
-                        ocr_result["text"],
-                        uploaded_image.name,
+                        question,
+                        cached_ocr["text"],
+                        cached_ocr["filename"],
                     )
                 answer_result["latency_ms"] = round((perf_counter() - started) * 1000, 2)
-                st.session_state["last_image_result"].update(answer_result)
+                history_entry = {
+                    "filename": cached_ocr["filename"],
+                    "question": question,
+                    "ocr_text": cached_ocr["text"],
+                    "ocr_confidence": cached_ocr["mean_confidence"],
+                    **answer_result,
+                }
+                st.session_state.setdefault("image_question_history", []).append(history_entry)
                 text_cost = (
                     token_cost_usd(
                         answer_result["prompt_tokens"],
@@ -320,7 +360,7 @@ with image_tab:
                     else None
                 )
                 get_assistant().store.record(
-                    question=image_question.strip(),
+                    question=question,
                     supported=answer_result["supported"],
                     answer=answer_result["answer"],
                     latency_ms=answer_result["latency_ms"],
@@ -329,9 +369,9 @@ with image_tab:
                     prompt_tokens=answer_result.get("prompt_tokens"),
                     completion_tokens=answer_result.get("completion_tokens"),
                     estimated_cost_usd=text_cost,
-                    input_chars=len(ocr_result["text"]),
-                    input_words=len(ocr_result["text"].split()),
-                    input_bytes=len(uploaded_image.getvalue()),
+                    input_chars=len(cached_ocr["text"]),
+                    input_words=len(cached_ocr["text"].split()),
+                    input_bytes=len(image_bytes),
                 )
             except Exception as exc:
                 if ocr_complete:
@@ -340,34 +380,41 @@ with image_tab:
                     st.session_state["image_error"] = f"Local OCR failed: {exc}"
     if st.session_state.get("image_error"):
         st.error(st.session_state["image_error"])
-        st.caption("If OCR text was extracted, it remains visible below even if Groq answer generation failed.")
+        if st.session_state.get("image_ocr_cache"):
+            st.caption("OCR text is cached locally and can be reused for another question.")
 
-    image_result = st.session_state.get("last_image_result")
-    if image_result:
+    image_ocr_cache = st.session_state.get("image_ocr_cache")
+    if image_ocr_cache and image_ocr_cache.get("fingerprint") == image_fingerprint:
         st.divider()
-        st.markdown(f"**Image:** {image_result['filename']}")
+        st.markdown(f"**Image:** {image_ocr_cache['filename']}")
         st.markdown("### Extracted text (OCR)")
-        st.code(image_result["ocr_text"], language="text")
-        if image_result.get("ocr_confidence") is not None:
-            st.caption(f"Mean OCR confidence: {image_result['ocr_confidence']:.0%} (estimate, not a correctness guarantee)")
-        if image_result.get("answer"):
-            st.markdown(f"**Question:** {image_result['question']}")
-            st.markdown("### GPT-OSS-20B answer")
-            if image_result.get("supported"):
-                st.write(image_result["answer"])
-                if image_result.get("citations"):
-                    st.caption("Grounded in extracted text: " + ", ".join(f"[{item}]" for item in image_result["citations"]))
-            else:
-                st.warning(image_result["answer"])
-            stats = [f"Model: {image_result.get('model', 'openai/gpt-oss-20b')}"]
-            if image_result.get("prompt_tokens") is not None:
-                stats.append(f"input tokens: {image_result['prompt_tokens']}")
-            if image_result.get("completion_tokens") is not None:
-                stats.append(f"output tokens: {image_result['completion_tokens']}")
-            if image_result.get("latency_ms") is not None:
-                stats.append(f"total OCR + answer time: {image_result['latency_ms']:.0f} ms")
-            st.caption(" · ".join(stats))
-            st.warning("OCR can misread amounts, dates, and identifiers. Verify the extracted text against the original image.")
+        st.code(image_ocr_cache["text"], language="text")
+        if image_ocr_cache.get("mean_confidence") is not None:
+            st.caption(
+                f"Mean OCR confidence: {image_ocr_cache['mean_confidence']:.0%} "
+                "(estimate, not a correctness guarantee)"
+            )
+
+    for image_result in st.session_state.get("image_question_history", []):
+        st.markdown(f"**Question:** {image_result['question']}")
+        st.markdown("### GPT-OSS-20B answer")
+        if image_result.get("supported"):
+            st.write(image_result["answer"])
+            if image_result.get("citations"):
+                st.caption("Grounded in extracted text: " + ", ".join(
+                    f"[{item}]" for item in image_result["citations"]
+                ))
+        else:
+            st.warning(image_result["answer"])
+        stats = [f"Model: {image_result.get('model', 'openai/gpt-oss-20b')}"]
+        if image_result.get("prompt_tokens") is not None:
+            stats.append(f"input tokens: {image_result['prompt_tokens']}")
+        if image_result.get("completion_tokens") is not None:
+            stats.append(f"output tokens: {image_result['completion_tokens']}")
+        if image_result.get("latency_ms") is not None:
+            stats.append(f"answer time: {image_result['latency_ms']:.0f} ms")
+        st.caption(" · ".join(stats))
+        st.warning("OCR can misread amounts, dates, and identifiers. Verify the extracted text against the original image.")
 
 with st.expander("Local usage and estimated-cost log"):
     st.caption(
