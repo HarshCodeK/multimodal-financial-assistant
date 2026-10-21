@@ -1,12 +1,11 @@
-"""Safe diagnostics for local Groq API-key configuration.
-
-Never return or log the API key itself.
-"""
+"""Safe diagnostics for local Groq API-key configuration; never expose secrets."""
 
 import os
 from pathlib import Path
 
 from dotenv import dotenv_values
+
+PLACEHOLDER_KEY = "replace_with_your_groq_api_key"
 
 
 def normalize_api_key(value: str | None) -> str:
@@ -18,31 +17,33 @@ def normalize_api_key(value: str | None) -> str:
 
 
 def groq_key_diagnostics(project_root: str | Path, process_env_preexisting: bool = False) -> dict:
-    root = Path(project_root)
-    env_file = root / ".env"
-    file_values = dotenv_values(env_file) if env_file.is_file() else {}
-    file_key = normalize_api_key(str(file_values.get("GROQ_API_KEY") or ""))
-    process_key = normalize_api_key(os.environ.get("GROQ_API_KEY"))
-    effective_key = process_key or file_key
+    """Prefer a usable project-root .env key; fall back to process env only if absent."""
+    env_file = Path(project_root) / ".env"
+    values = dotenv_values(env_file) if env_file.is_file() else {}
+    raw_file_key = str(values.get("GROQ_API_KEY") or "")
+    file_key = normalize_api_key(raw_file_key)
+    process_raw = os.environ.get("GROQ_API_KEY", "")
+    process_key = normalize_api_key(process_raw)
+    usable_file_key = bool(file_key) and file_key != PLACEHOLDER_KEY
+    effective_key = file_key if usable_file_key else process_key
     source = (
-        "process environment (takes precedence over .env)"
-        if process_env_preexisting and process_key
-        else ".env file"
-        if file_key and not process_env_preexisting
-        else "process environment"
-        if process_key
+        "project-root .env file (takes precedence)"
+        if usable_file_key
+        else "process environment (no usable key in .env)"
+        if process_key and process_key != PLACEHOLDER_KEY
         else "not found"
     )
-    looks_placeholder = not effective_key or effective_key == "replace_with_your_groq_api_key"
+    placeholder = not effective_key or effective_key == PLACEHOLDER_KEY
+    effective_raw = raw_file_key if usable_file_key else process_raw
     return {
         "env_file_exists": env_file.is_file(),
         "file_has_key": bool(file_key),
         "process_env_has_key": bool(process_key),
         "source": source,
-        "configured": bool(effective_key) and not looks_placeholder,
-        "has_outer_whitespace": bool(process_key) and os.environ.get("GROQ_API_KEY") != os.environ.get("GROQ_API_KEY", "").strip(),
-        "looks_placeholder": looks_placeholder,
-        "key_length": len(effective_key) if not looks_placeholder else 0,
+        "configured": bool(effective_key) and not placeholder,
+        "has_outer_whitespace": bool(effective_raw) and effective_raw != effective_raw.strip(),
+        "looks_placeholder": placeholder,
+        "key_length": len(effective_key) if not placeholder else 0,
     }
 
 
@@ -59,30 +60,26 @@ def friendly_groq_error(exc: Exception, workflow: str = "request") -> str:
     )
     if "groq_api_key is missing" in message:
         return (
-            f"No Groq API key was available for this {workflow}. Put GROQ_API_KEY=your_actual_key_here "
-            "in the project-root .env file (not .env.example), save it, and restart Streamlit. "
-            "The key is never shown by this diagnostic."
+            f"No Groq API key was available for this {workflow}. Put a valid GROQ_API_KEY in the project-root "
+            ".env file and restart Streamlit. The key is never shown by this diagnostic."
         )
     if is_auth_error:
         return (
-            f"Groq rejected the API key for this {workflow} (HTTP 401 / invalid_api_key). "
-            "The app can read a key, but Groq does not accept it. Check the exact project-root .env file, "
-            "paste the complete current key without extra characters, remove the example placeholder, and "
-            "restart Streamlit. If GROQ_API_KEY is also set in Windows/user/system environment variables, "
-            "that value takes precedence over .env; update or remove the stale variable. If unsure, revoke the "
-            "old key and create a new one in the Groq Console. The key is never shown by this diagnostic."
+            f"Groq rejected the API key for this {workflow} (HTTP 401 / invalid_api_key). The app's key source "
+            "is shown in the configuration panel. A usable project-root .env key takes precedence over inherited "
+            "Windows environment variables. Verify the key in Groq Console; the key is never displayed."
         )
     if status_code == 429 or "rate_limit" in message:
         return (
-            f"Groq rate-limited this {workflow}. Check your model limits and account quota in the Groq Console, "
+            f"Groq rate-limited this {workflow}. Check model limits and account quota in Groq Console, "
             "then retry after the limit resets."
         )
     if status_code in (400, 404) or "model_not_found" in message:
         return (
-            f"Groq rejected this {workflow} request or model. Check that the configured model ID is currently "
-            "available to your account and supports this input type. Details are intentionally redacted."
+            f"Groq rejected this {workflow} request or model. Check that the configured text model is available "
+            "to your account. Details are intentionally redacted."
         )
     return (
-        f"The Groq {workflow} request failed ({type(exc).__name__}). Check network access, model availability, "
-        "and the Groq Console. Sensitive request details are not displayed."
+        f"The Groq {workflow} request failed ({type(exc).__name__}). Check network access, text-model availability, "
+        "and Groq Console. Sensitive request details are not displayed."
     )

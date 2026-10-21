@@ -1,4 +1,4 @@
-"""Streamlit UI for PDF RAG exploration and separate image question answering."""
+"""Streamlit UI for PDF RAG and local-OCR image question answering."""
 
 import json
 import os
@@ -7,57 +7,47 @@ from time import perf_counter
 from pathlib import Path
 
 import streamlit as st
-from dotenv import load_dotenv
+from dotenv import dotenv_values, load_dotenv
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-_preexisting_groq_key = os.environ.get("GROQ_API_KEY", "").strip()
-GROQ_KEY_WAS_SET_BEFORE_DOTENV = bool(
-    _preexisting_groq_key and _preexisting_groq_key != "replace_with_your_groq_api_key"
-)
-# Empty/example-placeholder environment variables otherwise prevent python-dotenv from loading a real .env key.
-if not GROQ_KEY_WAS_SET_BEFORE_DOTENV:
-    os.environ.pop("GROQ_API_KEY", None)
-load_dotenv(PROJECT_ROOT / ".env")
+# Prefer a usable key in this project's .env over stale inherited Windows variables.
+_project_values = dotenv_values(PROJECT_ROOT / ".env")
+_project_key = str(_project_values.get("GROQ_API_KEY") or "").strip().strip("'\"")
+if _project_key and _project_key != "replace_with_your_groq_api_key":
+    os.environ["GROQ_API_KEY"] = _project_key
+else:
+    load_dotenv(PROJECT_ROOT / ".env", override=False)
 SRC = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SRC))
 
-from financial_assistant.costing import (
-    DEFAULT_TEXT_RATES,
-    DEFAULT_VISION_RATES,
-    GOOGLE_VISION_OCR_USD_PER_IMAGE,
-    GROQ_QWEN_IMAGE_INPUT_TOKENS,
-    TokenRates,
-    estimate_ocr_then_text_cost_usd,
-    estimate_vision_cost_usd,
-    token_cost_usd,
-)
+from financial_assistant.costing import DEFAULT_TEXT_RATES, token_cost_usd
 from financial_assistant.diagnostics import friendly_groq_error, groq_key_diagnostics
+from financial_assistant.ocr import answer_ocr_text, extract_image_text
 from financial_assistant.services import create_default_assistant
-from financial_assistant.vision import answer_image_question
 
-st.set_page_config(page_title="Multimodal Financial Assistant", page_icon="📄", layout="wide")
-st.title("Multimodal Financial Assistant")
+st.set_page_config(page_title="Financial Assistant", page_icon="📄", layout="wide")
+st.title("Financial Assistant")
 st.caption(
-    "Explore text-based PDF RAG, or ask a separate vision model about an uploaded image. "
-    "The two workflows are intentionally separate."
+    "Inspect PDF retrieval evidence and analyze text in images with local OCR. "
+    "Both workflows use the same Groq text model: openai/gpt-oss-20b."
 )
 
-key_status = groq_key_diagnostics(PROJECT_ROOT, GROQ_KEY_WAS_SET_BEFORE_DOTENV)
+key_status = groq_key_diagnostics(PROJECT_ROOT)
 with st.expander("Groq API configuration & troubleshooting", expanded=False):
     st.write(f"Project .env file found: {'yes' if key_status['env_file_exists'] else 'no'}")
     st.write(f"Key configured: {'yes' if key_status['configured'] else 'no'}")
     st.write(f"Effective key source: {key_status['source']}")
     st.write(f"Key length: {key_status['key_length'] or 'not configured'} characters (the key itself is never displayed)")
     if key_status["has_outer_whitespace"]:
-        st.warning("The environment-variable key has surrounding whitespace. The app trims it before use.")
+        st.warning("The configured key has surrounding whitespace. The app trims it before use.")
     if not key_status["configured"]:
         st.warning(
             f"Expected key location: {PROJECT_ROOT / '.env'}. Add GROQ_API_KEY=your_actual_key_here, "
             "save, and restart Streamlit. .env.example is only a template."
         )
     st.caption(
-        "A configured key is not necessarily valid. If Groq returns HTTP 401, check for an old Windows/user/system "
-        "GROQ_API_KEY variable (it overrides .env), recreate the key in Groq Console if needed, and restart the app."
+        "A usable key in this project's .env takes precedence over inherited Windows/user/system variables. "
+        "Restart Streamlit after changing configuration. Key validity is checked by Groq when a request is made."
     )
 
 
@@ -80,27 +70,7 @@ def submit_question():
         st.session_state["question_error"] = friendly_groq_error(exc, "PDF answer")
 
 
-with st.sidebar:
-    st.header("How it works")
-    st.markdown(
-        "**PDF RAG**\n"
-        "1. Extract selectable PDF text locally.\n"
-        "2. Chunk text and create embeddings locally.\n"
-        "3. Retrieve relevant passages from ChromaDB.\n"
-        "4. Send the question and retrieved passages to Groq for an answer."
-    )
-    st.divider()
-    st.markdown(
-        "**Image Q&A**\n"
-        "The uploaded image and question are sent directly to a Groq vision model. "
-        "Images are not added to the PDF index."
-    )
-    st.warning(
-        "Privacy: PDF extraction, embeddings and retrieval run locally. PDF questions plus retrieved excerpts, "
-        "and any image plus its question, are sent to Groq. Do not upload sensitive material unless that transfer is acceptable."
-    )
-
-pdf_tab, image_tab = st.tabs(["📄 PDF RAG Explorer", "🖼️ Ask about an image"])
+pdf_tab, image_tab = st.tabs(["📄 PDF RAG Explorer", "🧾 OCR image Q&A"])
 
 with pdf_tab:
     st.subheader("1. Upload and index a PDF")
@@ -114,7 +84,7 @@ with pdf_tab:
             "Choose a text-based PDF",
             type=["pdf"],
             key="pdf_upload_main",
-            help="PDF only, up to the extraction service's 10 MiB limit. Images are uploaded in the separate image tab.",
+            help="PDF only, up to the extraction service's 10 MiB limit. Scanned pages may require local OCR.",
         )
         if st.button(
             "Extract, chunk, embed & index PDF",
@@ -287,10 +257,11 @@ with pdf_tab:
     )
 
 with image_tab:
-    st.subheader("Ask a question about an image")
+    st.subheader("Ask a question about text in an image")
     st.write(
-        "Upload a receipt, statement screenshot, chart, or other image and ask a question about its visible contents. "
-        "This uses a vision-capable LLM directly; it does not run OCR locally and does not add the image to the PDF RAG index."
+        "OCR runs locally on your computer. Review the extracted text before the question and extracted text are sent "
+        "to Groq's openai/gpt-oss-20b text model. The raw image is never sent to Groq and is not added to ChromaDB. "
+        "This text-only workflow cannot reliably interpret charts or visual layouts."
     )
     image_col, question_col = st.columns([1, 1], gap="large")
     with image_col:
@@ -298,194 +269,105 @@ with image_tab:
             "Choose an image (PNG, JPEG, or WebP; max 5 MiB)",
             type=["png", "jpg", "jpeg", "webp"],
             key="image_upload_main",
-            help="The image is sent to Groq for visual analysis when you click Analyze image.",
+            help="The image is processed locally by OCR. Only extracted text and your question are sent to Groq.",
         )
         if uploaded_image is not None:
             st.image(uploaded_image.getvalue(), caption=uploaded_image.name, use_container_width=True)
     with question_col:
         image_question = st.text_area(
-            "What do you want to know about this image?",
-            placeholder="Read the total amount and date. If either is unclear, say so.",
+            "What do you want to know about the extracted text?",
+            placeholder="What is the total amount and transaction date?",
             key="image_question",
             height=120,
         )
         analyze_clicked = st.button(
-            "Analyze image",
+            "Run local OCR and answer",
             type="primary",
             disabled=uploaded_image is None or not image_question.strip(),
             use_container_width=True,
         )
         if analyze_clicked and uploaded_image is not None:
+            started = perf_counter()
+            st.session_state.pop("image_error", None)
+            st.session_state.pop("last_image_result", None)
+            ocr_complete = False
             try:
-                started = perf_counter()
-                with st.spinner("Sending the image and question to the Groq vision model..."):
-                    vision_result = answer_image_question(
-                        image_bytes=uploaded_image.getvalue(),
-                        filename=uploaded_image.name,
-                        question=image_question,
-                    )
-                vision_result["latency_ms"] = round((perf_counter() - started) * 1000, 2)
+                with st.spinner("Reading text locally from the image..."):
+                    ocr_result = extract_image_text(uploaded_image.getvalue(), uploaded_image.name)
+                ocr_complete = True
                 st.session_state["last_image_result"] = {
                     "filename": uploaded_image.name,
                     "question": image_question.strip(),
-                    **vision_result,
+                    "ocr_text": ocr_result["text"],
+                    "ocr_confidence": ocr_result["mean_confidence"],
                 }
-                image_cost = estimate_vision_cost_usd(
-                    vision_result.get("prompt_tokens"), vision_result.get("completion_tokens")
+                with st.spinner("Sending only the question and extracted text to GPT-OSS-20B..."):
+                    answer_result = answer_ocr_text(
+                        image_question,
+                        ocr_result["text"],
+                        uploaded_image.name,
+                    )
+                answer_result["latency_ms"] = round((perf_counter() - started) * 1000, 2)
+                st.session_state["last_image_result"].update(answer_result)
+                text_cost = (
+                    token_cost_usd(
+                        answer_result["prompt_tokens"],
+                        answer_result["completion_tokens"],
+                        DEFAULT_TEXT_RATES,
+                    )
+                    if answer_result.get("prompt_tokens") is not None
+                    and answer_result.get("completion_tokens") is not None
+                    else None
                 )
                 get_assistant().store.record(
                     question=image_question.strip(),
-                    supported=True,
-                    answer=vision_result["answer"],
-                    latency_ms=vision_result["latency_ms"],
-                    workflow="image_vision",
-                    model=vision_result.get("model"),
-                    prompt_tokens=vision_result.get("prompt_tokens"),
-                    completion_tokens=vision_result.get("completion_tokens"),
-                    estimated_cost_usd=image_cost,
-                    input_chars=len(image_question),
-                    input_words=len(image_question.split()),
+                    supported=answer_result["supported"],
+                    answer=answer_result["answer"],
+                    latency_ms=answer_result["latency_ms"],
+                    workflow="image_ocr_text",
+                    model=answer_result.get("model"),
+                    prompt_tokens=answer_result.get("prompt_tokens"),
+                    completion_tokens=answer_result.get("completion_tokens"),
+                    estimated_cost_usd=text_cost,
+                    input_chars=len(ocr_result["text"]),
+                    input_words=len(ocr_result["text"].split()),
                     input_bytes=len(uploaded_image.getvalue()),
                 )
             except Exception as exc:
-                st.error(friendly_groq_error(exc, "image analysis"))
+                if ocr_complete:
+                    st.session_state["image_error"] = friendly_groq_error(exc, "OCR image answer")
+                else:
+                    st.session_state["image_error"] = f"Local OCR failed: {exc}"
+    if st.session_state.get("image_error"):
+        st.error(st.session_state["image_error"])
+        st.caption("If OCR text was extracted, it remains visible below even if Groq answer generation failed.")
 
     image_result = st.session_state.get("last_image_result")
     if image_result:
         st.divider()
-        st.markdown(f"**Question:** {image_result['question']}")
         st.markdown(f"**Image:** {image_result['filename']}")
-        st.markdown("### Vision model response")
-        st.write(image_result["answer"])
-        token_stats = []
-        if image_result.get("model"):
-            token_stats.append(f"Model: {image_result['model']}")
-        if image_result.get("prompt_tokens") is not None:
-            token_stats.append(f"input tokens: {image_result['prompt_tokens']}")
-        if image_result.get("completion_tokens") is not None:
-            token_stats.append(f"output tokens: {image_result['completion_tokens']}")
-        if token_stats:
-            st.caption(" · ".join(token_stats))
-        st.warning(
-            "Vision-model output is not guaranteed to be correct. Verify amounts, dates, account details, and other "
-            "financial values against the original image."
-        )
-
-        st.subheader("Usage and estimated cost")
-        vision_usage_cost = estimate_vision_cost_usd(
-            image_result.get("prompt_tokens"), image_result.get("completion_tokens")
-        )
-        if vision_usage_cost is not None:
-            st.metric("Estimated vision API cost for this call", f"${vision_usage_cost:.8f} USD")
-            st.caption(
-                "Calculated from provider-reported input/output tokens and default Qwen3.6-27B rates "
-                "($0.60/M input, $3.00/M output). Published-rate estimate, not an invoice."
-            )
-        else:
-            st.info(
-                f"The provider did not return usage. A rough estimate starts at {GROQ_QWEN_IMAGE_INPUT_TOKENS:,} "
-                "image input tokens plus the question and answer; adjust assumptions in the comparison below."
-            )
-
-        with st.expander("Compare direct vision vs OCR + text LLM", expanded=True):
-            st.write(
-                "This is a cost calculator, not a live OCR implementation. Direct vision sends the image to Qwen. "
-                "The alternative assumes cloud OCR extracts text first, then GPT-OSS-20B answers from that text. "
-                "OCR can lose layout, handwriting, chart structure, or visual context."
-            )
-            rate_col1, rate_col2 = st.columns(2)
-            with rate_col1:
-                vision_input_rate = st.number_input(
-                    "Vision input price (USD / 1M tokens)", min_value=0.0,
-                    value=DEFAULT_VISION_RATES.input_per_million, step=0.05, format="%.4f",
-                    key="vision_input_rate",
-                )
-                vision_output_rate = st.number_input(
-                    "Vision output price (USD / 1M tokens)", min_value=0.0,
-                    value=DEFAULT_VISION_RATES.output_per_million, step=0.25, format="%.4f",
-                    key="vision_output_rate",
-                )
-                text_input_rate = st.number_input(
-                    "Text LLM input price (USD / 1M tokens)", min_value=0.0,
-                    value=DEFAULT_TEXT_RATES.input_per_million, step=0.01, format="%.4f",
-                    key="text_input_rate",
-                )
-                text_output_rate = st.number_input(
-                    "Text LLM output price (USD / 1M tokens)", min_value=0.0,
-                    value=DEFAULT_TEXT_RATES.output_per_million, step=0.05, format="%.4f",
-                    key="text_output_rate",
-                )
-            with rate_col2:
-                ocr_price = st.number_input(
-                    "Cloud OCR price per image (USD)", min_value=0.0,
-                    value=GOOGLE_VISION_OCR_USD_PER_IMAGE, step=0.0005, format="%.6f",
-                    key="ocr_price",
-                )
-                ocr_text_tokens = st.number_input(
-                    "Estimated OCR text tokens", min_value=0, max_value=200000, value=300, step=50,
-                    key="ocr_text_tokens",
-                )
-                assumed_output_tokens = st.number_input(
-                    "Assumed answer output tokens", min_value=1, max_value=8000,
-                    value=int(image_result.get("completion_tokens") or 100), step=10,
-                    key="comparison_output_tokens",
-                )
-                prompt_overhead = st.number_input(
-                    "Text LLM instructions/question overhead tokens", min_value=0, max_value=10000,
-                    value=250, step=25, key="comparison_prompt_overhead",
-                )
-                free_ocr_tier = st.checkbox(
-                    "Assume Google Cloud Vision's first 1,000 OCR units/month are still free",
-                    value=False, key="ocr_free_tier",
-                )
-            vision_rates = TokenRates(vision_input_rate, vision_output_rate)
-            text_rates = TokenRates(text_input_rate, text_output_rate)
-            vision_input_for_estimate = (
-                image_result.get("prompt_tokens")
-                if image_result.get("prompt_tokens") is not None
-                else GROQ_QWEN_IMAGE_INPUT_TOKENS + 100 + round(len(image_result["question"].split()) * 1.33)
-            )
-            vision_output_for_estimate = (
-                image_result.get("completion_tokens")
-                if image_result.get("completion_tokens") is not None
-                else int(assumed_output_tokens)
-            )
-            vision_estimate = token_cost_usd(
-                int(vision_input_for_estimate), int(vision_output_for_estimate), vision_rates
-            )
-            ocr_estimate = estimate_ocr_then_text_cost_usd(
-                int(ocr_text_tokens),
-                int(assumed_output_tokens),
-                text_rates=text_rates,
-                ocr_cost_usd=0.0 if free_ocr_tier else ocr_price,
-                prompt_overhead_tokens=int(prompt_overhead),
-            )
-            compare_a, compare_b = st.columns(2)
-            compare_a.metric("Direct vision estimate", f"${vision_estimate:.8f} USD")
-            compare_b.metric("OCR + text LLM estimate", f"${ocr_estimate:.8f} USD")
-            if ocr_estimate < vision_estimate:
-                st.success(
-                    f"Under these assumptions, OCR + text LLM is about "
-                    f"{vision_estimate / max(ocr_estimate, 1e-12):.2f}× cheaper."
-                )
-            elif vision_estimate < ocr_estimate:
-                st.success(
-                    f"Under these assumptions, direct vision is about "
-                    f"{ocr_estimate / max(vision_estimate, 1e-12):.2f}× cheaper."
-                )
+        st.markdown("### Extracted text (OCR)")
+        st.code(image_result["ocr_text"], language="text")
+        if image_result.get("ocr_confidence") is not None:
+            st.caption(f"Mean OCR confidence: {image_result['ocr_confidence']:.0%} (estimate, not a correctness guarantee)")
+        if image_result.get("answer"):
+            st.markdown(f"**Question:** {image_result['question']}")
+            st.markdown("### GPT-OSS-20B answer")
+            if image_result.get("supported"):
+                st.write(image_result["answer"])
+                if image_result.get("citations"):
+                    st.caption("Grounded in extracted text: " + ", ".join(f"[{item}]" for item in image_result["citations"]))
             else:
-                st.info("The two estimates are equal under these assumptions.")
-            st.caption(
-                "Default rates: Groq Qwen3.6-27B $0.60/M input and $3/M output; Groq GPT-OSS-20B "
-                "$0.075/M input and $0.30/M output; Google Cloud Vision OCR $1.50 per 1,000 images after its "
-                "monthly free tier. These are editable published-rate assumptions, not actual billing records. "
-                "Image tokenization and OCR free-tier usage can change the real bill."
-            )
-
-st.caption(
-    "PDF RAG and image Q&A are separate workflows: PDF content is indexed for retrieval; images are analyzed directly "
-    "per request and are not persisted in ChromaDB."
-)
+                st.warning(image_result["answer"])
+            stats = [f"Model: {image_result.get('model', 'openai/gpt-oss-20b')}"]
+            if image_result.get("prompt_tokens") is not None:
+                stats.append(f"input tokens: {image_result['prompt_tokens']}")
+            if image_result.get("completion_tokens") is not None:
+                stats.append(f"output tokens: {image_result['completion_tokens']}")
+            if image_result.get("latency_ms") is not None:
+                stats.append(f"total OCR + answer time: {image_result['latency_ms']:.0f} ms")
+            st.caption(" · ".join(stats))
+            st.warning("OCR can misread amounts, dates, and identifiers. Verify the extracted text against the original image.")
 
 with st.expander("Local usage and estimated-cost log"):
     st.caption(
@@ -502,4 +384,4 @@ with st.expander("Local usage and estimated-cost log"):
             mime="application/json",
         )
     else:
-        st.info("No request records yet. Ask a PDF question or analyze an image to create a usage record.")
+        st.info("No request records yet. Ask a PDF question or run OCR image Q&A to create a usage record.")

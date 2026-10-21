@@ -2,75 +2,54 @@
 
 ## Design goal
 
-The app demonstrates two explicit workflows in one Streamlit interface: PDF Retrieval-Augmented Generation (RAG) with inspectable evidence, and direct image question answering through a vision-capable model. The uploaders are on the main screen. The workflows do not share an index.
+A single Streamlit app demonstrates evidence-first PDF Retrieval-Augmented Generation and local OCR for image text. Both workflows use the same Groq text model, `openai/gpt-oss-20b`. There is no vision-model route.
 
-## Runtime and interface
+## Interface
 
-Run `python -m streamlit run src/financial_assistant/app.py`. Streamlit calls Python services directly; there is no FastAPI service or separate vector database server.
+Run `python -m streamlit run src/financial_assistant/app.py`.
 
-- **PDF RAG Explorer tab:** PDF uploader, explicit indexing action, indexing report, retrieval-grounded chat and inspection panels.
-- **Ask about an image tab:** image uploader, question field, analyze action and response.
-- **Sidebar:** architecture summary and privacy/data-flow notes only; primary upload controls are not hidden there.
+- **PDF RAG Explorer:** upload/index a PDF, inspect chunks/embeddings, ask questions, and review retrieved evidence before answers.
+- **OCR image Q&A:** upload an image, run local OCR, review extracted text, then ask GPT-OSS-20B about that text.
+- The left sidebar is removed. Configuration troubleshooting and privacy details live in the main page.
 
-## PDF indexing
+## PDF ingestion and retrieval
 
-1. The user explicitly uploads a text-based PDF and clicks the indexing button.
-2. PyMuPDF extracts selectable text page by page. Page numbers are attached to chunks; scanned/image-only PDFs with no text are rejected.
-3. Text is divided into 80-word chunks with 16-word overlap. Chunking is page-local.
-4. `sentence-transformers/all-MiniLM-L6-v2` creates one 384-dimensional vector per chunk. It is pretrained; the PDF does not train or fine-tune it.
-5. ChromaDB persists each chunk's vector, text and source/page metadata in the dedicated `financial_assistant_pdf_rag_v5` collection. This new collection namespace isolates old v4 persisted content so an old sample index cannot appear as the active index.
-6. A successful indexing operation replaces the previous indexed PDF rather than appending another source. Extraction and embedding happen before the existing collection is cleared.
+1. PyMuPDF extracts selectable text page by page.
+2. Pages with no selectable text are rendered locally and passed through RapidOCR; extracted text remains associated with its PDF page.
+3. Text is split into 80-word chunks with 16-word overlap.
+4. `all-MiniLM-L6-v2` generates 384-dimensional embeddings locally.
+5. ChromaDB stores vectors, chunk text and source/page metadata in `financial_assistant_pdf_rag_v5`.
+6. Questions are embedded with the same model; up to five passages are retrieved and sent with the question to GPT-OSS-20B.
+7. The UI displays the exact retrieved passages, source/page/distance and citations before the answer. Invalid citation IDs are discarded and unsupported answers abstain.
 
-The UI displays chunk text and boundaries, model name, vector dimensions, and the first few vector values. Individual vector dimensions are not human-readable labels.
+A successful indexing action replaces the active PDF. No bundled document is indexed automatically.
 
-## PDF question answering
+## Image OCR and answering
 
-1. The question is embedded with the same model used for document chunks.
-2. ChromaDB returns up to five nearest passages and cosine distances.
-3. The generator labels those passages `S1`, `S2`, etc. and sends the question and evidence to the configured Groq-hosted text model (default `openai/gpt-oss-20b`).
-4. The LLM is instructed to use only the evidence, return structured JSON, answer concisely and provide source IDs. The application discards invalid citation IDs and does not mark an answer supported unless the model claims support and cites at least one valid ID.
-5. Before the answer, the UI visibly displays every retrieved passage that was sent to the LLM, with its source filename, page, and cosine distance. Citation IDs show which displayed passages the answer cites. The answer and token usage appear after the evidence; the exact prompt is available in an inspection expander.
+1. Validate uploaded PNG/JPEG/WebP signature and size (5 MiB maximum).
+2. Decode the image locally and run RapidOCR (ONNX Runtime). OCR model files may download on first use and are cached locally.
+3. Display OCR text and mean line-confidence estimate to the user.
+4. Send only the user's question and extracted text to the same Groq text-model generator used by PDF RAG. The raw image is not sent to Groq, embedded, or stored in ChromaDB.
+5. Display the answer, citations to the OCR text, token usage and latency when available.
 
-These are practical guardrails, not a mathematical guarantee against hallucinations. A model can misinterpret evidence or cite a passage that does not fully justify its answer.
+This works for readable text, not chart comprehension or visual-spatial questions. OCR confidence is not a guarantee of correctness; verify amounts and dates.
 
-## Image question answering
+## API-key configuration
 
-1. The user uploads a PNG, JPEG, or WebP image and enters a question on the main screen.
-2. The service checks the byte signature and rejects empty, unsupported, or larger-than-5-MiB image data.
-3. The image bytes are base64-encoded into a data URL and sent with the question to Groq's vision-capable chat-completions API. The default model is `qwen/qwen3.6-27b`, configurable through `GROQ_VISION_MODEL`.
-4. The response text and provider input/output token usage (if supplied) are displayed.
-5. The image is not OCR-indexed locally, is not persisted to ChromaDB, and does not replace or modify the PDF index. Each image request is direct visual question answering, not image RAG.
+The app reads the project-root `.env` explicitly. A usable key there is assigned to the process environment and takes precedence over stale inherited Windows/user/system values. If no usable project key exists, the app falls back to ordinary environment loading. Keys are never displayed or logged.
 
-The system prompt tells the model not to follow instructions visible inside an image and not to guess unreadable financial values. This is not a guarantee; users must verify dates, amounts, and identifiers against the original.
+## Data handling and observability
 
-## Token, cost and request-length observability
+- PDF text extraction, scanned-page OCR, image OCR, embeddings and retrieval run locally.
+- PDF questions and retrieved PDF excerpts are sent to Groq.
+- Image questions and OCR-extracted text are sent to Groq; the image bytes are not.
+- SQLite stores question/answer text, workflow, model, latency, token counts and estimated cost. It does not store API keys or uploaded image bytes.
+- Cost is an estimate from configured text-model token rates, not a bill or account balance.
+- The app does not train/fine-tune models on uploaded documents.
 
-- PDF answers display provider-reported input/output tokens when available and estimate cost using default GPT-OSS-20B rates ($0.075/M input, $0.30/M output).
-- Image answers display provider-reported usage and estimate cost using Qwen3.6-27B rates ($0.60/M input, $3.00/M output). Groq's vision documentation says one image is counted as 2,048 input tokens for this model.
-- The image tab includes an editable estimate comparing direct vision with cloud OCR + GPT-OSS-20B. Default OCR pricing uses Google Cloud Vision's $1.50/1,000 image text-detection rate after the first 1,000 free monthly units. This alternative is a calculator only; no OCR API is called by the app.
-- Recent workflow/model, token counts, estimated USD cost, latency and input lengths are recorded in local SQLite and can be downloaded as JSON. The log stores question/answer text but not API keys or uploaded image bytes.
-- Rates are published defaults, not live billing data. Estimated cost is not account credit balance or invoice; users can edit rates in the UI. If provider usage is missing, the comparison uses labelled assumptions.
-- “Approx. document tokens” is a word-count × 1.33 estimate for full PDF text, not exact tokenization. “384 vector dimensions” means 384 numeric coordinates per chunk/query embedding, not words or confidence.
-- RAG may reduce repeated context for long documents, but embedding/indexing has overhead and retrieval can miss evidence. Image Q&A is not RAG.
+## Limitations
 
-## Data boundaries and persistence
-
-- PyMuPDF, chunking, Sentence Transformers and ChromaDB run locally.
-- PDF questions and retrieved text passages are sent to Groq for answer generation.
-- Image bytes and the image question are sent to Groq for vision analysis.
-- The uploaded PDF/image is not used to train or fine-tune either model by this app.
-- No bundled sample PDF or text is automatically indexed.
-- ChromaDB stores PDF chunks, vectors and source/page metadata.
-- SQLite stores local interaction and indexing metadata.
-- The Groq key is read from a local `.env` file, which must not be committed.
-
-## Main trade-offs and limitations
-
-- PDF chunking is word-based and can split sentences.
-- The embedding model is English-oriented and can miss exact identifiers, numbers or unusual terminology.
-- Top-k retrieval can omit relevant passages; cosine distance is not proof of support.
-- LLM answers can still be incorrect despite prompt constraints and citation validation.
-- PDF ingestion supports selectable text only; OCR must be performed before upload for scanned PDFs.
-- Image Q&A depends on Groq network/API access and may misread small or blurry text.
-- Uploaded images are sent to the configured provider; do not use confidential files unless the data transfer is acceptable.
-- This is a single-user educational app, not a production financial system.
+- OCR can misread low-resolution text, handwriting, unusual fonts and dense layouts.
+- Text-only models cannot infer visual details absent from OCR text.
+- Chunking can split sentences; retrieval can miss evidence; citations do not mathematically guarantee correctness.
+- This is a single-user educational demo, not a production financial system.

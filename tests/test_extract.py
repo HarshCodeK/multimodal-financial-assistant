@@ -1,4 +1,5 @@
 from pathlib import Path
+from unittest.mock import patch
 
 import pymupdf
 
@@ -32,13 +33,18 @@ def test_pdf_extraction_preserves_page_numbers(tmp_path):
     assert any("1200" in chunk.text for chunk in chunks)
 
 
-def test_image_only_pdf_is_not_silently_ocr_processed():
+def test_image_only_pdf_uses_local_ocr_fallback_and_skips_unreadable_page():
     doc = pymupdf.open()
-    doc.new_page()
+    page = doc.new_page()
+    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 8, 8), False)
+    pix.clear_with(255)
+    page.insert_image(pymupdf.Rect(72, 72, 160, 160), pixmap=pix)
     raw = doc.tobytes()
     doc.close()
 
-    assert extract_pdf_bytes(raw, source_name="scanned.pdf") == []
+    with patch("financial_assistant.extract.extract_image_text", side_effect=ValueError("no readable text")) as ocr:
+        assert extract_pdf_bytes(raw, source_name="scanned.pdf") == []
+    ocr.assert_called_once()
 
 
 def test_included_sample_pdf_has_extractable_policy_text():

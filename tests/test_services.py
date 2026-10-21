@@ -86,7 +86,7 @@ def test_pdf_indexing_logs_metadata_and_latency():
 def test_pdf_without_readable_text_gives_actionable_error():
     assistant, _, store = make_assistant()
     with patch("financial_assistant.services.extract_pdf_bytes", return_value=[]):
-        with pytest.raises(ValueError, match="No selectable text"):
+        with pytest.raises(ValueError, match="No readable text"):
             assistant.index_pdf("scanned.pdf", b"%PDF-test")
     assert store.rows == []
 

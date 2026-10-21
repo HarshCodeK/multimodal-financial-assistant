@@ -1,82 +1,45 @@
-# Interview Q&A — Multimodal Financial Assistant
+# Interview Q&A — Financial Assistant
 
 ## 1. What does the project do?
 
-It offers two distinct workflows. PDF RAG indexes one text-based PDF into overlapping text chunks and vectors, retrieves passages for a question, and asks an LLM to answer from that evidence with source IDs. Image Q&A sends an uploaded image and a question directly to a vision-capable LLM.
+It offers two text-first workflows. PDF RAG indexes a PDF into overlapping chunks and vectors, retrieves passages for a question, and asks GPT-OSS-20B to answer from that evidence with source IDs. Image Q&A runs local OCR, shows the extracted text, then asks the same text model to answer from that text. No vision model is used.
 
 ## 2. What is the PDF RAG pipeline?
 
-PDF → PyMuPDF extraction → overlapping chunks → Sentence Transformer embeddings → ChromaDB → question embedding → top-k retrieval → Groq text LLM → concise answer + cited evidence.
+PDF → PyMuPDF selectable-text extraction (local OCR fallback for image-only pages) → overlapping chunks → Sentence Transformer embeddings → ChromaDB → question embedding → top-k retrieval → GPT-OSS-20B → concise answer + cited evidence.
 
 ## 3. What is the image Q&A pipeline?
 
-PNG/JPEG/WebP upload → signature and size validation → base64 data URL → image + user question sent to Groq vision model → answer and provider usage displayed. This is direct visual question answering, not OCR-indexed image RAG.
+PNG/JPEG/WebP upload → validate signature/size → local RapidOCR → inspect extracted text → send question + extracted text to GPT-OSS-20B → answer and token usage. Raw image bytes are not sent to Groq.
 
 ## 4. Why keep PDF and image workflows separate?
 
-They solve different tasks. The PDF path builds a persistent searchable index and can show chunk boundaries, vectors, retrieval results and citations. The image path sends one image directly to a vision model per request. Images do not enter or replace the PDF index.
+The PDF path builds a persistent searchable index and exposes chunk boundaries, vectors, retrieval results and citations. The image path performs local OCR for one uploaded image and sends extracted text to the text LLM; it does not alter the PDF index.
 
 ## 5. Does the uploaded PDF or image train either model?
 
-No. The embedding model, text LLM and vision model are pretrained. This app extracts and indexes PDF text or sends an image as inference input. It does not fine-tune models on these uploads.
+No. The embedding model, OCR model and text LLM are pretrained. The app performs inference and does not fine-tune models on uploads.
 
 ## 6. What does PyMuPDF do?
 
-It extracts selectable text from each PDF page and preserves page numbers. It does not summarize or interpret the document. This PDF workflow does not run OCR; image-only/scanned PDFs need OCR preprocessing before upload.
+It extracts selectable PDF text and page numbers. For pages containing images but no selectable text, the app renders the page locally and uses OCR as a fallback.
 
-## 7. Why do we chunk documents?
+## 7. Why use OCR instead of a vision model?
 
-Chunks let retrieval select a smaller subset instead of sending the whole PDF for every question. This project uses 80-word chunks with 16-word overlap. Overlap preserves some local context across chunk boundaries; page-local chunking helps keep page references clear.
+The design deliberately avoids vision-model configuration and image-input API calls. OCR plus a text LLM is suitable for receipts, forms, statements and screenshots with readable text, and keeps image bytes local. The trade-off is that OCR can lose layout, handwriting detail, charts and spatial relationships; those tasks would require a different architecture.
 
-## 8. What exactly is an embedding?
+## 8. What is the embedding model doing?
 
-An embedding is a fixed-length numeric vector produced by a pretrained neural network. Its learned representation is useful for comparing text semantically; it is not a human-readable summary. `all-MiniLM-L6-v2` produces 384-dimensional vectors in this app.
+`all-MiniLM-L6-v2` maps chunks and questions into 384-dimensional vectors so ChromaDB can retrieve semantically similar passages. It is not the answer-generating LLM.
 
-## 9. What does ChromaDB do?
+## 9. Does a citation guarantee correctness?
 
-It stores PDF chunk vectors, original chunk text and metadata, and retrieves nearby vectors for the question vector. It is the vector store—not the embedding model or the LLM. Cosine distance indicates vector proximity, not proof that a passage answers the question.
+No. The app checks that citation IDs refer to retrieved chunks and displays the evidence. It does not mathematically prove the answer is entailed by the cited text.
 
-## 10. What does the PDF LLM do?
+## 10. What data leaves the machine?
 
-It receives the question and retrieved evidence, then generates a concise answer and source IDs. The prompt instructs it not to use outside knowledge and to abstain if the evidence is insufficient. Citation validation rejects invalid source IDs, but neither prompting nor citation validation guarantees correctness.
+PDF questions and retrieved PDF excerpts go to Groq. For images, OCR runs locally and only the question plus extracted text go to Groq. Local SQLite records question/answer text, model usage and latency; it does not store API keys or image bytes.
 
-## 11. Why does RAG potentially reduce token usage?
+## 11. What are the main limitations?
 
-Without retrieval, an implementation may send the whole PDF with every question. This app indexes the document once and sends a small number of retrieved passages for each question. This can reduce repeated input context for large documents, but indexing has overhead and short PDFs may not benefit. The project does not claim a fixed cost saving.
-
-## 12. Is the image workflow RAG?
-
-No. The image is passed directly to a vision-capable model along with the user's question. The image is not chunked, embedded, stored in ChromaDB, or retrieved later. A future image-RAG implementation would require a separate explicit design.
-
-## 13. What is sent outside the machine?
-
-PDF extraction, chunking, embeddings and ChromaDB retrieval run locally. For PDF answers, the question and retrieved excerpts are sent to Groq. For image Q&A, the image and question are sent to Groq. Do not upload confidential files unless this provider transfer is acceptable.
-
-## 14. What happens when the model cannot read a value?
-
-The vision model is instructed to flag unclear details rather than guess. This is not guaranteed behavior. Users must verify financial amounts, dates and identifiers against the original image.
-
-## 15. What are the limitations?
-
-PDF chunks can split sentences; embeddings can miss exact identifiers; top-k retrieval can miss evidence; cosine distance does not prove support; text and vision models can make mistakes; scanned PDFs need external OCR; and image analysis requires network access and a valid Groq API key. This is an educational single-user app, not a production financial system.
-
-
-## 16. How does the app estimate API cost?
-
-It multiplies provider-reported input/output token counts by the configured published price per million tokens. If usage is missing, the app labels the comparison as an estimate. It is not an invoice, balance, or remaining-credit counter. The OCR alternative is a hypothetical calculator, not a live OCR pipeline.
-
-## 17. Why might vision cost differently from OCR + a text LLM?
-
-Direct vision bills the multimodal model for image/text input and generated output. OCR + text LLM adds an OCR service cost and then bills a text model for extracted text, prompt, and answer. The cheaper path depends on image count, OCR provider/free tier, OCR text length, selected model rates, and whether layout/chart context matters. The app exposes these assumptions instead of claiming one path is always cheaper.
-
-## 18. What does “Approx. document tokens” mean?
-
-It estimates full-document token volume from word count multiplied by 1.33. This is a rough size estimate, not actual tokenizer count or the number sent on each RAG question.
-
-## 19. What do 384 embedding dimensions mean?
-
-The embedding model maps each text chunk to 384 numeric coordinates. ChromaDB compares a query vector with stored vectors to find semantically similar chunks. The dimensions are not words, model parameters, or a confidence score.
-
-## 20. Why might a key be present but still receive HTTP 401?
-
-The configured value may be revoked, copied incorrectly, surrounded by accidental characters, or overridden by a stale Windows/user/system environment variable. The app's diagnostics identify the effective source without displaying the secret. A truly invalid key must be replaced in Groq Console; code cannot make a rejected key valid.
+OCR may misread blurry text, handwriting and dense layouts. Text-only models cannot understand visual details absent from OCR. Retrieval can miss passages, and LLM answers can still be wrong. This is an educational single-user demo, not a production financial system.

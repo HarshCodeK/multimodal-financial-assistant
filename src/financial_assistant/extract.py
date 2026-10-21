@@ -1,4 +1,4 @@
-"""PDF text extraction and overlapping word-based chunking; no OCR or image QA."""
+"""PDF extraction with local OCR fallback and overlapping word-based chunking."""
 
 from pathlib import Path
 import re
@@ -6,6 +6,7 @@ import re
 import pymupdf
 
 from .models import DocumentChunk, SourceType
+from .ocr import extract_image_text
 
 MAX_PDF_BYTES = 10 * 1024 * 1024
 MAX_PDF_PAGES = 100
@@ -39,7 +40,7 @@ def extract_pdf(path: str | Path) -> list[DocumentChunk]:
 
 
 def extract_pdf_bytes(raw: bytes, source_name: str) -> list[DocumentChunk]:
-    """Extract selectable text page-by-page. Scanned/image-only PDFs need OCR and are rejected."""
+    """Extract selectable text and locally OCR image-only pages when readable text is absent."""
     if not raw or len(raw) > MAX_PDF_BYTES:
         raise ValueError("PDF is empty or larger than the 10 MiB limit")
     if not raw.startswith(b"%PDF-"):
@@ -55,6 +56,14 @@ def extract_pdf_bytes(raw: bytes, source_name: str) -> list[DocumentChunk]:
                 if extracted_total >= MAX_TOTAL_EXTRACTED_CHARS:
                     break
                 text = " ".join(page.get_text("text").split())
+                if not text and page.get_images(full=True):
+                    # OCR only image-only pages; blank pages do not trigger OCR model loading.
+                    pixmap = page.get_pixmap(matrix=pymupdf.Matrix(2, 2), alpha=False)
+                    try:
+                        text = " ".join(extract_image_text(pixmap.tobytes("png"), source_name)["text"].split())
+                    except ValueError:
+                        # An unreadable image page contributes no chunks.
+                        continue
                 if not text:
                     continue
                 remaining = MAX_TOTAL_EXTRACTED_CHARS - extracted_total
