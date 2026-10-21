@@ -24,7 +24,7 @@ from financial_assistant.costing import DEFAULT_TEXT_RATES, token_cost_usd
 from financial_assistant.diagnostics import friendly_groq_error, groq_key_diagnostics
 from financial_assistant.ocr import answer_ocr_text, extract_image_text
 from financial_assistant.services import create_default_assistant
-from financial_assistant.ui_state import active_pdf_sources, get_or_extract_image_text, image_fingerprint
+from financial_assistant.ui_state import active_pdf_sources, get_or_extract_image_text, image_fingerprint as get_image_fingerprint
 
 st.set_page_config(page_title="Financial Assistant", page_icon="📄", layout="wide")
 st.title("Financial Assistant")
@@ -291,7 +291,7 @@ with image_tab:
             help="OCR is local. Only extracted text and each question are sent to Groq.",
         )
         image_bytes = uploaded_image.getvalue() if uploaded_image is not None else None
-        image_fingerprint = image_fingerprint(image_bytes) if image_bytes else None
+        image_fingerprint = get_image_fingerprint(image_bytes) if image_bytes else None
         previous_fingerprint = st.session_state.get("image_ocr_fingerprint")
         if previous_fingerprint != image_fingerprint:
             st.session_state["image_ocr_fingerprint"] = image_fingerprint
