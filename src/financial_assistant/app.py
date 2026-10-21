@@ -322,11 +322,13 @@ with image_tab:
             st.session_state.pop("image_error", None)
             try:
                 cached_ocr = st.session_state.get("image_ocr_cache")
-                if not cached_ocr or cached_ocr.get("fingerprint") != image_fingerprint:
+                ocr_complete = bool(cached_ocr and cached_ocr.get("fingerprint") == image_fingerprint)
+                if not ocr_complete:
                     with st.spinner("Running local OCR for this image..."):
                         cached_ocr = get_or_extract_image_text(
                             st.session_state, image_bytes, uploaded_image.name, extract_image_text
                         )
+                    ocr_complete = True
                 else:
                     cached_ocr = get_or_extract_image_text(
                         st.session_state, image_bytes, uploaded_image.name, extract_image_text
@@ -372,7 +374,10 @@ with image_tab:
                     input_bytes=len(image_bytes),
                 )
             except Exception as exc:
-                st.session_state["image_error"] = friendly_groq_error(exc, "OCR image answer")
+                if ocr_complete:
+                    st.session_state["image_error"] = friendly_groq_error(exc, "OCR image answer")
+                else:
+                    st.session_state["image_error"] = f"Local OCR failed: {exc}"
     if st.session_state.get("image_error"):
         st.error(st.session_state["image_error"])
         if st.session_state.get("image_ocr_cache"):
