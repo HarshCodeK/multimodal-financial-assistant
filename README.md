@@ -25,7 +25,6 @@ Set your valid Groq key in the project-root `.env`:
 
 ```dotenv
 GROQ_API_KEY=your_real_key_here
-GROQ_MODEL=openai/gpt-oss-20b
 EMBEDDING_MODEL=all-MiniLM-L6-v2
 ```
 
